@@ -12,6 +12,7 @@ class Scenario(BaseScenario):
         world.num_agents = args.num_agents
         world.num_landmarks = args.num_landmarks  # 3
         world.collaborative = True
+        world.use_mlp_encoder = args.use_mlp_encoder
         # add agents
         world.agents = [Agent() for i in range(world.num_agents)]
         for i, agent in enumerate(world.agents):
@@ -19,6 +20,7 @@ class Scenario(BaseScenario):
             agent.collide = True
             agent.silent = True
             agent.size = 0.15
+            agent.id = i
         # add landmarks
         world.landmarks = [Landmark() for i in range(world.num_landmarks)]
         for i, landmark in enumerate(world.landmarks):
@@ -72,11 +74,25 @@ class Scenario(BaseScenario):
     def reward(self, agent, world):
         # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
         rew = 0
+        cover = 0
         for l in world.landmarks:
             dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos)))
                      for a in world.agents]
             rew -= min(dists)
-
+            
+            
+            if min(dists) <= world.agents[0].size + world.landmarks[0].size:
+                cover += 1
+                # give bonus for cover landmarks
+                rew += 1
+        # success bonus
+        if cover == len(world.landmarks):
+            rew += 4 * len(world.landmarks) 
+        # rew = 0
+        # for l in world.landmarks:
+        #     dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos)))
+        #              for a in world.agents]
+        #     rew -= min(dists)
         if agent.collide:
             for a in world.agents:
                 if self.is_collision(a, agent):
@@ -100,4 +116,27 @@ class Scenario(BaseScenario):
                 continue
             comm.append(other.state.c)
             other_pos.append(other.state.p_pos - agent.state.p_pos)
-        return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos + comm)
+        
+        id_vector = np.zeros(len(world.agents))
+        id_vector[agent.id] = 1
+        if world.use_mlp_encoder:
+            info = {}
+            info['agent_state'] = np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [id_vector])
+            info['other_state'] = np.concatenate(other_pos)
+            info['entity_state'] = np.concatenate(entity_pos)
+            info['comm'] = np.concatenate(comm)
+            return info
+        else:
+            return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos + [id_vector] + comm)
+
+    def info(self, world):
+        info = {}
+        cover = 0
+        for l in world.landmarks:
+            dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos)))
+                     for a in world.agents]
+            if min(dists) <= world.agents[0].size + l.size:
+                cover += 1
+        info['success_rate'] = cover / world.num_landmarks      
+
+        return info

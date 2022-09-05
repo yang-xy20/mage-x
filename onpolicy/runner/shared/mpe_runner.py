@@ -63,11 +63,16 @@ class MPERunner(Runner):
                     env_infos = {}
                     for agent_id in range(self.num_agents):
                         idv_rews = []
+                        suc = []
                         for info in infos:
                             if 'individual_reward' in info[agent_id].keys():
                                 idv_rews.append(info[agent_id]['individual_reward'])
+                            if agent_id == 0 and "success_rate" in info[agent_id].keys():
+                                suc.append(info[agent_id]['success_rate'])
                         agent_k = 'agent%i/individual_rewards' % agent_id
                         env_infos[agent_k] = idv_rews
+                        if agent_id == 0:
+                            env_infos["success_rate"] = suc
 
                 train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
                 print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))

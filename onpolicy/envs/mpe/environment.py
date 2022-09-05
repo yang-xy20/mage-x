@@ -17,12 +17,13 @@ class MultiAgentEnv(gym.Env):
     def __init__(self, world, reset_callback=None, reward_callback=None,
                  observation_callback=None, info_callback=None,
                  done_callback=None, post_step_callback=None,
-                 shared_viewer=True, discrete_action=True):
+                 shared_viewer=True, discrete_action=True, use_mlp_encoder=False):
 
         self.world = world
         self.world_length = self.world.world_length
         self.current_step = 0
         self.agents = self.world.policy_agents
+        self.use_mlp_encoder = use_mlp_encoder
         # set required vectorized gym env property
         self.n = len(world.policy_agents)
         # scenario callbacks
@@ -92,12 +93,25 @@ class MultiAgentEnv(gym.Env):
             # observation space
             obs_dim = len(observation_callback(agent, self.world))
             share_obs_dim += obs_dim
-            self.observation_space.append(spaces.Box(
-                low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
+            if self.use_mlp_encoder:
+                observation_space = {}
+                observation_space['agent_state'] = spaces.Box(low=-np.inf, high=+np.inf, shape=(4+self.n,), dtype=np.float32)
+                observation_space['other_state'] = spaces.Box(low=-np.inf, high=+np.inf, shape=(2*(self.n-1),), dtype=np.float32)
+                observation_space['entity_state'] = spaces.Box(low=-np.inf, high=+np.inf, shape=(2*self.world.num_landmarks,), dtype=np.float32)
+                observation_space['comm'] = spaces.Box(low=-np.inf, high=+np.inf, shape=(2*self.n,), dtype=np.float32)
+                share_observation_space = observation_space.copy()
+                observation_space = gym.spaces.Dict(observation_space)
+                share_observation_space = gym.spaces.Dict(share_observation_space)
+                self.observation_space.append(observation_space)
+                self.share_observation_space.append(share_observation_space)
+            else:
+                self.observation_space.append(spaces.Box(
+                    low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
+
             agent.action.c = np.zeros(self.world.dim_c)
-        
-        self.share_observation_space = [spaces.Box(
-            low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
+        if not self.use_mlp_encoder:
+            self.share_observation_space = [spaces.Box(
+                low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
         
         # rendering
         self.shared_viewer = shared_viewer
@@ -132,9 +146,11 @@ class MultiAgentEnv(gym.Env):
             reward_n.append([self._get_reward(agent)])
             done_n.append(self._get_done(agent))
             info = {'individual_reward': self._get_reward(agent)}
-            env_info = self._get_info(agent)
+            env_info = self._get_info()
             if 'fail' in env_info.keys():
                 info['fail'] = env_info['fail']
+            if 'success_rate' in env_info.keys():
+                info['success_rate'] = env_info['success_rate']
             info_n.append(info)
 
         # all agents get total reward in cooperative case, if shared reward, all agents have the same reward, and reward is sum
@@ -163,10 +179,10 @@ class MultiAgentEnv(gym.Env):
         return obs_n
 
     # get info used for benchmarking
-    def _get_info(self, agent):
+    def _get_info(self):
         if self.info_callback is None:
             return {}
-        return self.info_callback(agent, self.world)
+        return self.info_callback(self.world)
 
     # get observation for a particular agent
     def _get_obs(self, agent):

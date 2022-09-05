@@ -55,6 +55,13 @@ def parse_args(args, parser):
     parser.add_argument("--num_landmarks", type=int, default=3)
     parser.add_argument('--num_agents', type=int,
                         default=2, help="number of players")
+    parser.add_argument("--use_new_loss", action="store_true", 
+                        default=False, 
+                        help="by default False. If True, use_new_policy_loss")
+    parser.add_argument("--use_mlp_encoder", action="store_true", 
+                        default=False, 
+                        help="by default False. If True, use_mlp_encoder")
+                          
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -98,7 +105,7 @@ def main(args):
     if all_args.use_wandb:
         run = wandb.init(config=all_args,
                          project=all_args.env_name,
-                         entity=all_args.user_name,
+                         entity=all_args.wandb_name,
                          notes=socket.gethostname(),
                          name=str(all_args.algorithm_name) + "_" +
                          str(all_args.experiment_name) +

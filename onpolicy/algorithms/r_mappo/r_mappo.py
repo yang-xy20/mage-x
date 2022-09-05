@@ -29,7 +29,7 @@ class R_MAPPO():
         self.entropy_coef = args.entropy_coef
         self.max_grad_norm = args.max_grad_norm       
         self.huber_delta = args.huber_delta
-
+        
         self._use_recurrent_policy = args.use_recurrent_policy
         self._use_naive_recurrent = args.use_naive_recurrent_policy
         self._use_max_grad_norm = args.use_max_grad_norm
@@ -39,6 +39,8 @@ class R_MAPPO():
         self._use_valuenorm = args.use_valuenorm
         self._use_value_active_masks = args.use_value_active_masks
         self._use_policy_active_masks = args.use_policy_active_masks
+        self._use_new_loss = args.use_new_loss
+        self._num_agents = args.num_agents
         
         assert (self._use_popart and self._use_valuenorm) == False, ("self._use_popart and self._use_valuenorm can not be set True simultaneously")
         
@@ -121,8 +123,13 @@ class R_MAPPO():
                                                                               available_actions_batch,
                                                                               active_masks_batch)
         # actor update
-        imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
-
+        if self._use_new_loss:
+            action_log_probs_copy = action_log_probs.reshape(-1, self._num_agents, 1).sum(1,keepdim=True).repeat(1,self._num_agents,1).reshape(-1,1)
+            old_action_log_probs_batch_copy = old_action_log_probs_batch.reshape(-1, self._num_agents, 1).sum(1,keepdim=True).repeat(1,self._num_agents,1).reshape(-1,1)
+            imp_weights = torch.exp(action_log_probs_copy - old_action_log_probs_batch_copy)
+        else:
+            imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
+    
         surr1 = imp_weights * adv_targ
         surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
 
@@ -193,11 +200,11 @@ class R_MAPPO():
 
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy:
-                data_generator = buffer.recurrent_generator(advantages, self.num_mini_batch, self.data_chunk_length)
+                data_generator = buffer.recurrent_generator_transformer(advantages, self.num_mini_batch, self.data_chunk_length)
             elif self._use_naive_recurrent:
                 data_generator = buffer.naive_recurrent_generator(advantages, self.num_mini_batch)
             else:
-                data_generator = buffer.feed_forward_generator(advantages, self.num_mini_batch)
+                data_generator = buffer.feed_forward_generator_transformer(advantages, self.num_mini_batch)
 
             for sample in data_generator:
 
