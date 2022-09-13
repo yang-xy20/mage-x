@@ -47,9 +47,9 @@ class MultiAgentEnv(gym.Env):
         # in this env, force_discrete_action == False��because world do not have discrete_action
 
         # if true, every agent has the same reward
-        self.shared_reward = world.collaborative if hasattr(
-            world, 'collaborative') else False
-        #self.shared_reward = False
+        # self.shared_reward = world.collaborative if hasattr(
+        #     world, 'collaborative') else False
+        self.shared_reward = False
         self.time = 0
 
         # configure spaces
