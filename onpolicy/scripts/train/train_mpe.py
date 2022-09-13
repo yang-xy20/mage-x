@@ -61,8 +61,11 @@ def parse_args(args, parser):
     parser.add_argument("--use_mlp_encoder", action="store_true", 
                         default=False, 
                         help="by default False. If True, use_mlp_encoder")
-                          
-
+    parser.add_argument("--use_macro", action="store_true", 
+                        default=False, 
+                        help="by default False. If True, use_macro_micro")
+    parser.add_argument('--step_difference', type=int, default=2, help="local_num_step")
+    
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
@@ -151,7 +154,10 @@ def main(args):
 
     # run experiments
     if all_args.share_policy:
-        from onpolicy.runner.shared.mpe_runner import MPERunner as Runner
+        if all_args.use_macro:
+            from onpolicy.runner.shared.mpe_hrunner import MPEHRunner as Runner
+        else:
+            from onpolicy.runner.shared.mpe_runner import MPERunner as Runner
     else:
         from onpolicy.runner.separated.mpe_runner import MPERunner as Runner
 
