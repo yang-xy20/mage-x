@@ -57,6 +57,7 @@ class MultiAgentEnv(gym.Env):
         self.observation_space = []
         self.share_observation_space = []
         share_obs_dim = 0
+        ctl_share_obs_dim = 0
         for agent in self.agents:
             total_action_space = []
             
@@ -87,12 +88,14 @@ class MultiAgentEnv(gym.Env):
                 else:
                     act_space = spaces.Tuple(total_action_space)
                 self.action_space.append(act_space)
+                self.exe_action_space.append(act_space)
             else:
                 self.action_space.append(total_action_space[0])
+                self.exe_action_space.append(total_action_space[0])
+        
+                self.ctl_action_space.append(spaces.Discrete(self.n))
             
             # observation space
-            obs_dim = len(observation_callback(agent, self.world))
-            share_obs_dim += obs_dim
             if self.use_mlp_encoder:
                 observation_space = {}
                 observation_space['agent_state'] = spaces.Box(low=-np.inf, high=+np.inf, shape=(4+self.n,), dtype=np.float32)
@@ -105,12 +108,19 @@ class MultiAgentEnv(gym.Env):
                 self.observation_space.append(observation_space)
                 self.share_observation_space.append(share_observation_space)
             else:
+                obs_dim = len(observation_callback(agent, self.world, 'exe'))
+                share_obs_dim += obs_dim
                 self.observation_space.append(spaces.Box(
                     low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
-
+                self.exe_observation_space.append(spaces.Box(
+                    low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
+                ctl_obs_dim = len(observation_callback(agent, self.world, 'ctl'))
+                ctl_share_obs_dim += ctl_obs_dim
             agent.action.c = np.zeros(self.world.dim_c)
         if not self.use_mlp_encoder:
             self.share_observation_space = [spaces.Box(
+                low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
+            self.exe_share_observation_space = [spaces.Box(
                 low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
         
         # rendering
@@ -128,7 +138,7 @@ class MultiAgentEnv(gym.Env):
             np.random.seed(seed)
 
     # step  this is  env.step()
-    def step(self, action_n):
+    def step(self, action_n, mode):
         self.current_step += 1
         obs_n = []
         reward_n = []
@@ -136,16 +146,24 @@ class MultiAgentEnv(gym.Env):
         info_n = []
         self.agents = self.world.policy_agents
         # set action for each agent
+        if mode is 'exe':
+            for i, agent in enumerate(self.agents):
+                self._set_action(action_n[i], agent, self.action_space[i])
+            # advance world state
+            self.world.step()  # core.step()
+            # record observation for each agent
+
+            if self.post_step_callback is not None:
+                self.post_step_callback(self.world)
+        elif mode is 'ctl':
+            self.world.pred_goal_id = action_n
+
+    def get_data(self, mode):
         for i, agent in enumerate(self.agents):
-            self._set_action(action_n[i], agent, self.action_space[i])
-        # advance world state
-        self.world.step()  # core.step()
-        # record observation for each agent
-        for i, agent in enumerate(self.agents):
-            obs_n.append(self._get_obs(agent))
-            reward_n.append([self._get_reward(agent)])
+            obs_n.append(self._get_obs(agent, mode))
+            reward_n.append([self._get_reward(agent, mode)])
             done_n.append(self._get_done(agent))
-            info = {'individual_reward': self._get_reward(agent)}
+            info = {'individual_reward': self._get_reward(agent, 'exe')}
             env_info = self._get_info()
             if 'fail' in env_info.keys():
                 info['fail'] = env_info['fail']
@@ -157,10 +175,6 @@ class MultiAgentEnv(gym.Env):
         reward = np.sum(reward_n)
         if self.shared_reward:
             reward_n = [[reward]] * self.n
-
-        if self.post_step_callback is not None:
-            self.post_step_callback(self.world)
-
         return obs_n, reward_n, done_n, info_n
 
     def reset(self):
@@ -185,10 +199,10 @@ class MultiAgentEnv(gym.Env):
         return self.info_callback(self.world)
 
     # get observation for a particular agent
-    def _get_obs(self, agent):
+    def _get_obs(self, agent, mode):
         if self.observation_callback is None:
             return np.zeros(0)
-        return self.observation_callback(agent, self.world)
+        return self.observation_callback(agent, self.world, mode)
 
     # get dones for a particular agent
     # unused right now -- agents are allowed to go beyond the viewing screen
@@ -201,10 +215,10 @@ class MultiAgentEnv(gym.Env):
         return self.done_callback(agent, self.world)
 
     # get reward for a particular agent
-    def _get_reward(self, agent):
+    def _get_reward(self, agent, mode):
         if self.reward_callback is None:
             return 0.0
-        return self.reward_callback(agent, self.world)
+        return self.reward_callback(agent, self.world, mode)
 
     # set env action for a particular agent
     def _set_action(self, action, agent, action_space, time=None):
