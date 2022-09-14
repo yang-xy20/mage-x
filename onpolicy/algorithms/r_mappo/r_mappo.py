@@ -41,6 +41,7 @@ class R_MAPPO():
         self._use_policy_active_masks = args.use_policy_active_masks
         self._use_new_loss = args.use_new_loss
         self._num_agents = args.num_agents
+        self._controller_num_agents = args.controller_num_agents
         
         assert (self._use_popart and self._use_valuenorm) == False, ("self._use_popart and self._use_valuenorm can not be set True simultaneously")
         
@@ -90,7 +91,7 @@ class R_MAPPO():
 
         return value_loss
 
-    def ppo_update(self, sample, update_actor=True):
+    def ppo_update(self, sample, mode, update_actor=True):
         """
         Update actor and critic networks.
         :param sample: (Tuple) contains data batch with which to update networks.
@@ -123,9 +124,14 @@ class R_MAPPO():
                                                                               available_actions_batch,
                                                                               active_masks_batch)
         # actor update
+        act_shape = action_log_probs.shape[-1]
         if self._use_new_loss:
-            action_log_probs_copy = action_log_probs.reshape(-1, self._num_agents, 1).sum(1,keepdim=True).repeat(1,self._num_agents,1).reshape(-1,1)
-            old_action_log_probs_batch_copy = old_action_log_probs_batch.reshape(-1, self._num_agents, 1).sum(1,keepdim=True).repeat(1,self._num_agents,1).reshape(-1,1)
+            if mode == 'ctl':
+                num_agents = self._controller_num_agents
+            elif mode == 'exe':
+                num_agents = self._num_agents
+            action_log_probs_copy = action_log_probs.reshape(-1, num_agents, act_shape).sum(1,keepdim=True).repeat(1, num_agents,1).reshape(-1,act_shape)
+            old_action_log_probs_batch_copy = old_action_log_probs_batch.reshape(-1, num_agents, act_shape).sum(1,keepdim=True).repeat(1, num_agents,1).reshape(-1,act_shape)
             imp_weights = torch.exp(action_log_probs_copy - old_action_log_probs_batch_copy)
         else:
             imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
@@ -170,7 +176,7 @@ class R_MAPPO():
 
         return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights
 
-    def train(self, buffer, update_actor=True):
+    def train(self, buffer, mode, update_actor=True):
         """
         Perform a training update using minibatch GD.
         :param buffer: (SharedReplayBuffer) buffer containing training data.
@@ -209,7 +215,7 @@ class R_MAPPO():
             for sample in data_generator:
 
                 value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights \
-                    = self.ppo_update(sample, update_actor)
+                    = self.ppo_update(sample, mode, update_actor)
 
                 train_info['value_loss'] += value_loss.item()
                 train_info['policy_loss'] += policy_loss.item()

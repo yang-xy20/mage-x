@@ -6,8 +6,6 @@ import torch
 from tensorboardX import SummaryWriter
 import math
 
-from tmarl.loggers.utils import timer
-
 # from ...transmit import Client
 from onpolicy.utils.shared_buffer import SharedReplayBuffer
 
@@ -25,8 +23,8 @@ class HRunner(object):
         self.eval_envs = config['eval_envs']
         self.device = config['device']
         self.num_agents = config['num_agents']
-        # self.controller_num_agents = config['controller_num_agents']
-        # self.executor_num_agents = config['executor_num_agents']
+        self.controller_num_agents = self.all_args.controller_num_agents
+        self.executor_num_agents = self.num_agents
 
         if config.__contains__("render_envs"):
             self.render_envs = config['render_envs']
@@ -42,6 +40,7 @@ class HRunner(object):
         self.use_obs_instead_of_state = self.all_args.use_obs_instead_of_state
         # In HRL, num_env_steps represents the controller's step numbers
         self.num_env_steps = self.all_args.num_env_steps
+        self.step_difference = self.all_args.step_difference
         # In HRL, num_env_steps represents the controller's episode length
         # self.episode_length = self.all_args.episode_length
         if self.all_args.episode_length % (self.all_args.step_difference + 1) == 0:
@@ -63,7 +62,7 @@ class HRunner(object):
         self.n_render_rollout_threads = self.all_args.n_render_rollout_threads
         self.use_linear_lr_decay = self.all_args.use_linear_lr_decay
         self.hidden_size = self.all_args.hidden_size
-        self.use_wandb = not self.all_args.disable_wandb
+        self.use_wandb = self.all_args.use_wandb
         #self.use_single_network = self.all_args.use_single_network
         self.use_render = self.all_args.use_render
         self.recurrent_N = self.all_args.recurrent_N
@@ -169,14 +168,14 @@ class HRunner(object):
         print('exe_episode_length: ', exe_episode_length)
 
         self.controller_buffer = SharedReplayBuffer(self.all_args,
-                                        self.num_agents,
+                                        self.controller_num_agents,
                                         self.envs.ctl_observation_space[0],
                                         self.envs.ctl_share_observation_space[0],
                                         self.envs.ctl_action_space[0],
                                         episode_length=ctl_episode_length)
 
         self.executor_buffer = SharedReplayBuffer(self.all_args,
-                                                  self.num_agents,
+                                                  self.executor_num_agents,
                                                   self.envs.exe_observation_space[0],
                                                   self.envs.exe_share_observation_space[0],
                                                   self.envs.exe_action_space[0],
@@ -224,21 +223,21 @@ class HRunner(object):
         trainer.prep_rollout()
 
         if 'transformer' in self.algorithm_name:
-            next_values = trainer.algo_module.get_values(np.concatenate(buffer.buffer.share_obs[-1]),
-                                                         np.concatenate(buffer.buffer.obs[-1]),
-                                                         np.concatenate(buffer.buffer.rnn_states_critic[-1]),
-                                                         np.concatenate(buffer.buffer.masks[-1]))
+            next_values = trainer.policy.get_values(np.concatenate(buffer.share_obs[-1]),
+                                                         np.concatenate(buffer.obs[-1]),
+                                                         np.concatenate(buffer.rnn_states_critic[-1]),
+                                                         np.concatenate(buffer.masks[-1]))
         else:
-            next_values = trainer.algo_module.get_values(np.concatenate(buffer.buffer.share_obs[-1]),
-                                                         np.concatenate(buffer.buffer.rnn_states_critic[-1]),
-                                                         np.concatenate(buffer.buffer.masks[-1]))
-        next_values = np.array(np.split(_t2n(next_values), self.learner_n_rollout_threads))
+            next_values = trainer.policy.get_values(np.concatenate(buffer.share_obs[-1]),
+                                                         np.concatenate(buffer.rnn_states_critic[-1]),
+                                                         np.concatenate(buffer.masks[-1]))
+        next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
 
         buffer.compute_returns(next_values, trainer.value_normalizer)
 
-    def train(self, trainer, buffer):
+    def train(self, trainer, buffer, mode):
         trainer.prep_training()
-        train_infos = trainer.train(buffer.buffer)
+        train_infos = trainer.train(buffer, mode)
         buffer.after_update()
         return train_infos
 
@@ -246,7 +245,7 @@ class HRunner(object):
         ctl_policy_actor = self.controller_trainer.policy.actor
         torch.save(ctl_policy_actor.state_dict(), str(self.save_dir) + "/ctl_actor.pt")
         ctl_policy_critic = self.controller_trainer.policy.critic
-        torch.save(policy_critic.state_dict(), str(self.save_dir) + "/ctl_critic.pt")
+        torch.save(ctl_policy_critic.state_dict(), str(self.save_dir) + "/ctl_critic.pt")
 
         exe_policy_actor = self.executor_trainer.policy.actor
         torch.save(exe_policy_actor.state_dict(), str(self.save_dir) + "/exe_actor.pt")

@@ -15,6 +15,7 @@ class Scenario(BaseScenario):
         world.num_landmarks = args.num_landmarks  # 3
         world.collaborative = True
         world.use_mlp_encoder = args.use_mlp_encoder
+        world.pred_goal_id = np.zeros((world.num_agents))
         # add agents
         world.agents = [Agent() for i in range(world.num_agents)]
         for i, agent in enumerate(world.agents):
@@ -81,9 +82,9 @@ class Scenario(BaseScenario):
         
         rew = 0
         cover = 0
-        if mode is 'exe':
+        if mode == 'exe':
             goal_id = world.pred_goal_id[agent.id]
-            target_goal = world.landmarks[goal_id]
+            target_goal = world.landmarks[int(goal_id)]
             dists = np.sqrt(np.sum(np.square(agent.state.p_pos - target_goal.state.p_pos)))
             rew -= dists
             if dists <= world.agents[0].size + world.landmarks[0].size:
@@ -92,13 +93,16 @@ class Scenario(BaseScenario):
                 for a in world.agents:
                     if self.is_collision(a, agent):
                         rew -= 1
-        elif mode is 'ctl':
+        elif mode == 'ctl':
             dists = 0
-            for a in world.agents:
-                goal_id = world.pred_goal_id[a.id]
-                target_goal = world.landmarks[goal_id]
-                dists += np.sqrt(np.sum(np.square(a.state.p_pos - target_goal.state.p_pos)))
-            rew -= dists - self.gt_dists
+            if not np.any(world.pred_goal_id):
+                rew = 0
+            else:
+                for a in world.agents:
+                    goal_id = world.pred_goal_id[a.id]
+                    target_goal = world.landmarks[int(goal_id)]
+                    dists += np.sqrt(np.sum(np.square(a.state.p_pos - target_goal.state.p_pos)))
+                rew -= dists - self.gt_dists
         # for l in world.landmarks:
         #     dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos)))
         #              for a in world.agents]
@@ -115,6 +119,7 @@ class Scenario(BaseScenario):
     def observation(self, agent, world, mode):
         # get positions of all entities in this agent's reference frame
         entity_pos = []
+        agent_pos = []
         goal_id = self.goal_id[agent.id]
         for land_id, entity in enumerate(world.landmarks):  # world.entities:
             if goal_id == land_id:
@@ -129,6 +134,7 @@ class Scenario(BaseScenario):
         comm = []
         other_pos = []
         for other in world.agents:
+            agent_pos.append(other.state.p_pos)
             if other is agent:
                 continue
             comm.append(other.state.c)
@@ -136,7 +142,7 @@ class Scenario(BaseScenario):
         
         id_vector = np.zeros(len(world.agents))
         id_vector[agent.id] = 1
-        if mode is 'exe':
+        if mode == 'exe':
             if world.use_mlp_encoder:
                 info = {}
                 info['agent_state'] = np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [id_vector])
@@ -147,9 +153,8 @@ class Scenario(BaseScenario):
             else:
                 return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [target_goal] + other_pos + [id_vector])
                 #entity_pos + other_pos + [id_vector] + comm)
-        elif mode is 'ctl':
-            return np.concatenate([agent.state.p_pos] + entity_pos + other_pos + [id_vector] + comm)
-
+        elif mode == 'ctl':
+            return np.concatenate(agent_pos + entity_pos)
 
     def compute_macro_allocation(self, world):
         cost = np.zeros((len(world.agents), len(world.landmarks)))
@@ -162,7 +167,7 @@ class Scenario(BaseScenario):
         
         dists = 0
         for a in world.agents:
-            goal_id = self.goal_id[a.id]
+            goal_id = col_ind[a.id]
             target_goal = world.landmarks[goal_id]
             dists += np.sqrt(np.sum(np.square(a.state.p_pos - target_goal.state.p_pos)))
         
@@ -179,3 +184,5 @@ class Scenario(BaseScenario):
         info['success_rate'] = cover / world.num_landmarks      
 
         return info
+
+

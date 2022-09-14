@@ -1,22 +1,23 @@
 import time
 import numpy as np
 import torch
-from onpolicy.runner.shared.base_hierarchical_runner import Runner
+from onpolicy.runner.shared.base_hierarchical_runner import HRunner
 import wandb
 import imageio
+import torch.nn as nn
 
 def _t2n(x):
     return x.detach().cpu().numpy()
 
-class MPEHRunner(Runner):
+class MPEHRunner(HRunner):
     """Runner class to perform training, evaluation. and data collection for the MPEs. See parent class for details."""
     def __init__(self, config):
         super(MPEHRunner, self).__init__(config)
 
     def run(self):
         self.envs.reset() 
-        ctl_obs, ctl_rwd, ctl_done, ctl_info = self.envs.get_data('ctl')
-        self.init_buffer(self.controller_buffer, ctl_obs)
+        ctl_obs, ctl_rwd, ctl_done, ctl_info = self.envs.get_data("ctl")
+        self.init_buffer(self.controller_buffer, self.controller_num_agents, ctl_obs, 'ctl')
 
         start = time.time()
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
@@ -28,25 +29,25 @@ class MPEHRunner(Runner):
             ctl_step = 0
             exe_step = 0
             for step in range(self.episode_length):
-                if step % (self.envs.step_difference + 1) == 0:
+                if step % (self.step_difference + 1) == 0:
                     # Sample actions
                     self.ctl_values, self.ctl_acts, self.ctl_act_log_probs, self.ctl_rnn_states, \
                     self.ctl_rnn_states_critic, self.ctl_actions_env = self.collect(ctl_step, 'ctl')
                     ctl_step += 1
-                    self.envs.step(self.ctl_actions_env, 'ctl')
+                    self.envs.step(self.ctl_actions_env , 'ctl')
 
                     if step == 0 and episode == 0:
                         self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
-                        self.init_buffer(self.executor_buffer, self.exe_obs)
+                        self.init_buffer(self.executor_buffer, self.executor_num_agents, self.exe_obs, 'exe')
                         self.exe_values, self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, \
                             self.exe_rnn_states_critic, self.exe_actions_env = self.collect(exe_step, 'exe')
                     
                     self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
                     exe_data = self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos, self.exe_values, \
                                self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, self.exe_rnn_states_critic
-                    self.insert(exe_data, self.executor_buffer)
+                    self.insert(exe_data, self.executor_buffer, self.executor_num_agents,'exe')
 
-                elif step % (self.envs.step_difference + 1) == self.envs.step_difference:
+                elif step % (self.step_difference + 1) == self.step_difference:
                     # Sample actions
                     self.exe_values, self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, \
                         self.exe_rnn_states_critic, self.exe_actions_env = self.collect(exe_step, 'exe')
@@ -59,7 +60,7 @@ class MPEHRunner(Runner):
                     ctl_data = self.ctl_obs, self.ctl_rwd, self.ctl_done, self.ctl_info, self.ctl_values, \
                                self.ctl_acts, self.ctl_act_log_probs, self.ctl_rnn_states, self.ctl_rnn_states_critic
                     # insert data into buffer
-                    self.insert(ctl_data, self.controller_buffer)
+                    self.insert(ctl_data, self.controller_buffer, self.controller_num_agents,'ctl')
                 else:
                     # Sample actions
                     self.exe_values, self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, \
@@ -72,11 +73,12 @@ class MPEHRunner(Runner):
                     
                     exe_data = self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos, self.exe_values,\
                                self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, self.exe_rnn_states_critic
-                    self.insert(exe_data, self.executor_buffer)
+                    self.insert(exe_data, self.executor_buffer, self.executor_num_agents,'exe')
 
             # compute return and update network
-            self.compute()
-            train_infos = self.train()
+            controller_train_infos = self.learn_update(self.controller_trainer, self.controller_buffer, episode,
+                                                       episodes, 'ctl')
+            executor_train_infos = self.learn_update(self.executor_trainer, self.executor_buffer, episode, episodes, 'exe')
             
             # post process
             total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
@@ -103,7 +105,7 @@ class MPEHRunner(Runner):
                     for agent_id in range(self.num_agents):
                         idv_rews = []
                         suc = []
-                        for info in infos:
+                        for info in self.exe_infos:
                             if 'individual_reward' in info[agent_id].keys():
                                 idv_rews.append(info[agent_id]['individual_reward'])
                             if agent_id == 0 and "success_rate" in info[agent_id].keys():
@@ -113,23 +115,29 @@ class MPEHRunner(Runner):
                         if agent_id == 0:
                             env_infos["success_rate"] = suc
 
-                train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
-                print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
-                self.log_train(train_infos, total_num_steps)
+                executor_train_infos["average_episode_rewards"] = np.mean(self.executor_buffer.rewards) * self.episode_length
+                print("average episode rewards is {}".format(executor_train_infos["average_episode_rewards"]))
+                self.log_train(executor_train_infos, total_num_steps)
                 self.log_env(env_infos, total_num_steps)
 
             # eval
             if episode % self.eval_interval == 0 and self.use_eval:
                 self.eval(total_num_steps)
     
-    def init_buffer(self, buffer, obs):
-        if self.use_centralized_V:
+    def init_buffer(self, buffer, num_agents, obs, mode):
+        if self.use_centralized_V and mode =='exe':
             share_obs = obs.reshape(self.n_rollout_threads, -1)
             share_obs = np.expand_dims(share_obs, 1).repeat(num_agents, 1)
         else:
             share_obs = obs
         buffer.share_obs[0] = share_obs.copy()
         buffer.obs[0] = obs.copy()
+
+    def learn_update(self, trainer, buffer, episode, episodes, mode):
+        # compute return and update network
+        self.compute(trainer, buffer)
+        train_infos = self.train(trainer, buffer, mode)
+        return train_infos
 
     @torch.no_grad()
     def collect(self, step, mode):
@@ -169,21 +177,23 @@ class MPEHRunner(Runner):
         elif action_space[0].__class__.__name__ == 'Discrete':
             actions_env = np.squeeze(np.eye(action_space[0].n)[actions], 2)
         else:
-            raise NotImplementedError
+            action = action.detach().clone()
+            action = nn.Sigmoid()(action)
+            actions_env = np.array(np.split(_t2n(action), self.n_rollout_threads))
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
-    def insert(self, data, buffer):
+    def insert(self, data, buffer, num_agents, mode):
         obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic = data
 
         rnn_states[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
-        rnn_states_critic[dones == True] = np.zeros(((dones == True).sum(), *self.buffer.rnn_states_critic.shape[3:]), dtype=np.float32)
-        masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+        rnn_states_critic[dones == True] = np.zeros(((dones == True).sum(), *buffer.rnn_states_critic.shape[3:]), dtype=np.float32)
+        masks = np.ones((self.n_rollout_threads, num_agents, 1), dtype=np.float32)
         masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
 
-        if self.use_centralized_V:
+        if self.use_centralized_V and mode=='exe':
             share_obs = obs.reshape(self.n_rollout_threads, -1)
-            share_obs = np.expand_dims(share_obs, 1).repeat(self.num_agents, axis=1)
+            share_obs = np.expand_dims(share_obs, 1).repeat(num_agents, axis=1)
         else:
             share_obs = obs
 

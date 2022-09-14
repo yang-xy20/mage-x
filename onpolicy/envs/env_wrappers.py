@@ -38,11 +38,18 @@ class ShareVecEnv(ABC):
         'render.modes': ['human', 'rgb_array']
     }
 
-    def __init__(self, num_envs, observation_space, share_observation_space, action_space):
+    def __init__(self, num_envs, observation_space, share_observation_space, ctl_observation_space, ctl_share_observation_space,\
+        exe_observation_space, exe_share_observation_space, ctl_action_space, exe_action_space, action_space):
         self.num_envs = num_envs
         self.observation_space = observation_space
         self.share_observation_space = share_observation_space
         self.action_space = action_space
+        self.ctl_observation_space = ctl_observation_space
+        self.ctl_share_observation_space = ctl_share_observation_space
+        self.exe_observation_space = exe_observation_space
+        self.exe_share_observation_space = exe_share_observation_space
+        self.ctl_action_space = ctl_action_space
+        self.exe_action_space = exe_action_space
 
     @abstractmethod
     def reset(self):
@@ -97,13 +104,13 @@ class ShareVecEnv(ABC):
         self.close_extras()
         self.closed = True
 
-    def step(self, actions):
+    def step(self, actions, mode):
         """
         Step the environments synchronously.
 
         This is available for backwards compatibility.
         """
-        self.step_async(actions)
+        self.step_async(actions, mode)
         return self.step_wait()
 
     def render(self, mode='human'):
@@ -143,18 +150,20 @@ def worker(remote, parent_remote, env_fn_wrapper):
     while True:
         cmd, data = remote.recv()
         if cmd == 'step':
-            ob, reward, done, info = env.step(data)
+            env.step(data)
+            # remote.send((ob, reward, done, info))
+        elif cmd == 'reset':
+            env.reset()
+            # remote.send((ob))
+        elif cmd == 'get_data':
+            ob, reward, done, info = env.get_data(mode=data)
+            remote.send((ob, reward, done, info))
             if 'bool' in done.__class__.__name__:
                 if done:
-                    ob = env.reset()
+                    env.reset()
             else:
                 if np.all(done):
-                    ob = env.reset()
-
-            remote.send((ob, reward, done, info))
-        elif cmd == 'reset':
-            ob = env.reset()
-            remote.send((ob))
+                    env.reset()
         elif cmd == 'render':
             if data == "rgb_array":
                 fr = env.render(mode=data)
@@ -169,7 +178,9 @@ def worker(remote, parent_remote, env_fn_wrapper):
             remote.close()
             break
         elif cmd == 'get_spaces':
-            remote.send((env.observation_space, env.share_observation_space, env.action_space))
+            remote.send((env.observation_space, env.share_observation_space, env.ctl_observation_space, \
+            env.ctl_share_observation_space, env.exe_observation_space, env.exe_share_observation_space, \
+            env.ctl_action_space, env.exe_action_space, env.action_space))
         else:
             raise NotImplementedError
 
@@ -250,27 +261,32 @@ class SubprocVecEnv(ShareVecEnv):
             remote.close()
 
         self.remotes[0].send(('get_spaces', None))
-        observation_space, share_observation_space, action_space = self.remotes[0].recv()
-        ShareVecEnv.__init__(self, len(env_fns), observation_space,
-                             share_observation_space, action_space)
+        observation_space, share_observation_space, ctl_observation_space, ctl_share_observation_space,\
+        exe_observation_space, exe_share_observation_space, ctl_action_space, exe_action_space, action_space = self.remotes[0].recv()
+        ShareVecEnv.__init__(self, len(env_fns), observation_space, share_observation_space, ctl_observation_space, ctl_share_observation_space,\
+        exe_observation_space, exe_share_observation_space, ctl_action_space, exe_action_space, action_space )
 
-    def step_async(self, actions):
+    def step_async(self, actions, mode):
         for remote, action in zip(self.remotes, actions):
-            remote.send(('step', action))
+            remote.send(('step', (action, mode)))
         self.waiting = True
 
     def step_wait(self):
-        results = [remote.recv() for remote in self.remotes]
+        #[remote.recv() for remote in self.remotes]
         self.waiting = False
+    
+    def get_data(self, mode):
+        for remote in self.remotes:
+            remote.send(('get_data', mode))
+        results = [remote.recv() for remote in self.remotes]
         obs, rews, dones, infos = zip(*results)
         return np.stack(obs), np.stack(rews), np.stack(dones), infos
 
     def reset(self):
         for remote in self.remotes:
             remote.send(('reset', None))
-        obs = [remote.recv() for remote in self.remotes]
-        return np.stack(obs)
-
+        # [remote.recv() for remote in self.remotes]
+        # return np.stack(obs)
 
     def reset_task(self):
         for remote in self.remotes:
@@ -330,7 +346,8 @@ def shareworker(remote, parent_remote, env_fn_wrapper):
             break
         elif cmd == 'get_spaces':
             remote.send(
-                (env.observation_space, env.share_observation_space, env.action_space))
+                (env.observation_space, env.share_observation_space, env.ctl_observation_space, env.ctl_share_observation_space,\
+                env.exe_observation_space, env.exe_share_observation_space, env.ctl_action_space, env.exe_action_space, env.action_space))
         elif cmd == 'render_vulnerability':
             fr = env.render_vulnerability(data)
             remote.send((fr))
@@ -422,7 +439,8 @@ def choosesimpleworker(remote, parent_remote, env_fn_wrapper):
                 env.render(mode=data)
         elif cmd == 'get_spaces':
             remote.send(
-                (env.observation_space, env.share_observation_space, env.action_space))
+                (env.observation_space, env.share_observation_space, env.ctl_observation_space, env.ctl_share_observation_space,\
+        env.exe_observation_space, env.exe_share_observation_space, env.ctl_action_space, env.exe_action_space, env.action_space))
         else:
             raise NotImplementedError
 
@@ -663,30 +681,40 @@ class DummyVecEnv(ShareVecEnv):
         self.envs = [fn() for fn in env_fns]
         env = self.envs[0]
         ShareVecEnv.__init__(self, len(
-            env_fns), env.observation_space, env.share_observation_space, env.action_space)
+            env_fns), env.observation_space, env.share_observation_space, env.ctl_observation_space, \
+            env.ctl_share_observation_space, env.exe_observation_space, env.exe_share_observation_space, \
+            env.ctl_action_space, env.exe_action_space, env.action_space)
         self.actions = None
 
-    def step_async(self, actions):
+    def step_async(self, actions, mode):
         self.actions = actions
+        self.mode = mode
 
     def step_wait(self):
-        results = [env.step(a) for (a, env) in zip(self.actions, self.envs)]
-        obs, rews, dones, infos = map(np.array, zip(*results))
+        [env.step(a, self.mode) for (a, env) in zip(self.actions, self.envs)]
+        # results = 
+        # obs, rews, dones, infos = map(np.array, zip(*results))
 
+        
+
+        # self.actions = None
+        # return obs, rews, dones, infos
+
+    def reset(self):
+        [env.reset() for env in self.envs]
+        #return np.array(obs)
+    
+    def get_data(self, mode):
+        results = [env.get_data(mode) for env in self.envs]
+        obs, rews, dones, infos = map(np.array, zip(*results))
         for (i, done) in enumerate(dones):
             if 'bool' in done.__class__.__name__:
                 if done:
-                    obs[i] = self.envs[i].reset()
+                    self.envs[i].reset()
             else:
                 if np.all(done):
-                    obs[i] = self.envs[i].reset()
-
-        self.actions = None
+                    self.envs[i].reset()
         return obs, rews, dones, infos
-
-    def reset(self):
-        obs = [env.reset() for env in self.envs]
-        return np.array(obs)
 
     def close(self):
         for env in self.envs:

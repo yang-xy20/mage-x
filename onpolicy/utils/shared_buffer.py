@@ -31,8 +31,8 @@ class SharedReplayBuffer(object):
     :param act_space: (gym.Space) action space for agents.
     """
 
-    def __init__(self, args, num_agents, obs_space, cent_obs_space, act_space):
-        self.episode_length = args.episode_length
+    def __init__(self, args, num_agents, obs_space, cent_obs_space, act_space, episode_length):
+        self.episode_length = episode_length
         self.n_rollout_threads = args.n_rollout_threads
         self.hidden_size = args.hidden_size
         self.recurrent_N = args.recurrent_N

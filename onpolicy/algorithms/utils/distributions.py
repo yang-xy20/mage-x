@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from .util import init
+import math
 
 """
 Modify standard PyTorch distributions so they to make compatible with this codebase. 
@@ -27,18 +28,17 @@ class FixedCategorical(torch.distributions.Categorical):
     def mode(self):
         return self.probs.argmax(dim=-1, keepdim=True)
 
-
 # Normal
 class FixedNormal(torch.distributions.Normal):
     def log_probs(self, actions):
-        return super().log_prob(actions).sum(-1, keepdim=True)
+        return super().log_prob(actions)
 
     def entropy(self):
-        return super.entropy().sum(-1)
+        return 0.5 + 0.5 * math.log(2 * math.pi) + torch.log(self.scale).sum(-1)
+        #return super.entropy().sum(-1)
 
     def mode(self):
         return self.mean
-
 
 # Bernoulli
 class FixedBernoulli(torch.distributions.Bernoulli):
@@ -78,7 +78,7 @@ class DiagGaussian(nn.Module):
 
         self.fc_mean = init_(nn.Linear(num_inputs, num_outputs))
         self.logstd = AddBias(torch.zeros(num_outputs))
-
+    
     def forward(self, x):
         action_mean = self.fc_mean(x)
 
