@@ -34,16 +34,16 @@ class FixedNormal(torch.distributions.Normal):
         return super().log_prob(actions)
 
     def entropy(self):
-        return 0.5 + 0.5 * math.log(2 * math.pi) + torch.log(self.scale).sum(-1)
-        #return super.entropy().sum(-1)
-
+        return super().entropy().sum(-1)
+        
+        
     def mode(self):
         return self.mean
 
 # Bernoulli
 class FixedBernoulli(torch.distributions.Bernoulli):
     def log_probs(self, actions):
-        return super.log_prob(actions).view(actions.size(0), -1).sum(-1).unsqueeze(-1)
+        return super().log_prob(actions).view(actions.size(0), -1).sum(-1).unsqueeze(-1)
 
     def entropy(self):
         return super().entropy().sum(-1)

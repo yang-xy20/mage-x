@@ -158,11 +158,11 @@ def worker(remote, parent_remote, env_fn_wrapper):
         elif cmd == 'get_data':
             ob, reward, done, info = env.get_data(mode=data)
             remote.send((ob, reward, done, info))
-            if 'bool' in done.__class__.__name__:
+            if 'bool' in done.__class__.__name__ and data == 'ctl':
                 if done:
                     env.reset()
             else:
-                if np.all(done):
+                if np.all(done) and data == 'ctl':
                     env.reset()
         elif cmd == 'render':
             if data == "rgb_array":
@@ -691,7 +691,7 @@ class DummyVecEnv(ShareVecEnv):
         self.mode = mode
 
     def step_wait(self):
-        [env.step(a, self.mode) for (a, env) in zip(self.actions, self.envs)]
+        [env.step((a,self.mode)) for (a, env) in zip(self.actions, self.envs)]
         # results = 
         # obs, rews, dones, infos = map(np.array, zip(*results))
 
@@ -708,11 +708,11 @@ class DummyVecEnv(ShareVecEnv):
         results = [env.get_data(mode) for env in self.envs]
         obs, rews, dones, infos = map(np.array, zip(*results))
         for (i, done) in enumerate(dones):
-            if 'bool' in done.__class__.__name__:
+            if 'bool' in done.__class__.__name__ and mode=='ctl':
                 if done:
                     self.envs[i].reset()
             else:
-                if np.all(done):
+                if np.all(done) and mode=='ctl':
                     self.envs[i].reset()
         return obs, rews, dones, infos
 

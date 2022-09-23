@@ -156,6 +156,7 @@ class MultiAgentEnv(gym.Env):
         self.agents = self.world.policy_agents
         # set action for each agent
         if mode == 'exe':
+            assert self.me_reset == False
             for i, agent in enumerate(self.agents):
                 self._set_action(action_n[i], agent, self.action_space[i])
             # advance world state
@@ -165,6 +166,8 @@ class MultiAgentEnv(gym.Env):
             if self.post_step_callback is not None:
                 self.post_step_callback(self.world)
         elif mode == 'ctl':
+            assert self.me_reset
+            self.me_reset = False
             self.world.pred_goal_id = np.argsort(action_n)[0]
 
     def get_data(self, mode):
@@ -200,9 +203,11 @@ class MultiAgentEnv(gym.Env):
         reward = np.sum(reward_n)
         if self.shared_reward:
             reward_n = [[reward]] * self.n
+    
         return obs_n, reward_n, done_n, info_n
 
     def reset(self):
+        self.me_reset = True
         self.current_step = 0
         # reset world
         self.reset_callback(self.world)

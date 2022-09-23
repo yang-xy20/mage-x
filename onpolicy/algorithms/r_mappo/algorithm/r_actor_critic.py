@@ -34,7 +34,7 @@ class R_Actor(nn.Module):
         base = CNNBase if len(obs_shape) == 3 else MLPBase
         self.base = base(args, obs_shape)
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+        if (self._use_naive_recurrent_policy or self._use_recurrent_policy) and (not self.use_macro):
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
@@ -63,7 +63,7 @@ class R_Actor(nn.Module):
 
         actor_features = self.base(obs)
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+        if (self._use_naive_recurrent_policy or self._use_recurrent_policy) and (not self.use_macro):
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
         actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
@@ -96,7 +96,7 @@ class R_Actor(nn.Module):
 
         actor_features = self.base(obs)
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+        if (self._use_naive_recurrent_policy or self._use_recurrent_policy) and (not self.use_macro):
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
         action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
@@ -116,7 +116,7 @@ class R_Critic(nn.Module):
     :param cent_obs_space: (gym.Space) (centralized) observation space.
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
-    def __init__(self, args, cent_obs_space, device=torch.device("cpu")):
+    def __init__(self, args, cent_obs_space, use_macro =False, device=torch.device("cpu")):
         super(R_Critic, self).__init__()
         self.hidden_size = args.hidden_size
         self._use_orthogonal = args.use_orthogonal
@@ -124,6 +124,7 @@ class R_Critic(nn.Module):
         self._use_recurrent_policy = args.use_recurrent_policy
         self._recurrent_N = args.recurrent_N
         self._use_popart = args.use_popart
+        self.use_macro = use_macro
         self.tpdv = dict(dtype=torch.float32, device=device)
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
 
@@ -131,7 +132,7 @@ class R_Critic(nn.Module):
         base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
         self.base = base(args, cent_obs_shape)
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+        if (self._use_naive_recurrent_policy or self._use_recurrent_policy) and (not self.use_macro):
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
         def init_(m):
@@ -159,7 +160,7 @@ class R_Critic(nn.Module):
         masks = check(masks).to(**self.tpdv)
 
         critic_features = self.base(cent_obs)
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+        if (self._use_naive_recurrent_policy or self._use_recurrent_policy) and (not self.use_macro):
             critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
         values = self.v_out(critic_features)
 

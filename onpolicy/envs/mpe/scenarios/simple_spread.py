@@ -43,13 +43,16 @@ class Scenario(BaseScenario):
         world.assign_landmark_colors()
 
         # set random initial states
+        self.prev_agent_state = []
         for agent in world.agents:
             agent.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
             agent.state.p_vel = np.zeros(world.dim_p)
             agent.state.c = np.zeros(world.dim_c)
+            self.prev_agent_state.append(agent.state.p_pos)
         for i, landmark in enumerate(world.landmarks):
             landmark.state.p_pos = 0.8 * np.random.uniform(-1, +1, world.dim_p)
             landmark.state.p_vel = np.zeros(world.dim_p)
+
         self.goal_id, self.gt_dists = self.compute_macro_allocation(world)
         
     def benchmark_data(self, agent, world):
@@ -101,31 +104,36 @@ class Scenario(BaseScenario):
                 for a in world.agents:
                     goal_id = world.pred_goal_id[a.id]
                     target_goal = world.landmarks[int(goal_id)]
-                    dists += np.sqrt(np.sum(np.square(a.state.p_pos - target_goal.state.p_pos)))
-                rew -= dists - self.gt_dists
-        # for l in world.landmarks:
-        #     dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos)))
-        #              for a in world.agents]
-        #     rew -= min(dists)
-        #     if min(dists) <= world.agents[0].size + world.landmarks[0].size:
-        #         cover += 1
-        #         # give bonus for cover landmarks
-        #         rew += 1
-        # success bonus
-        # if cover == len(world.landmarks):
-        #     rew += 4 * len(world.landmarks) 
+                    dists += np.sqrt(np.sum(np.square(self.prev_agent_state[a.id] - target_goal.state.p_pos)))
+                rew = -(dists - self.gt_dists)
+                self.prev_agent_state = []
+                for a in world.agents:
+                    self.prev_agent_state.append(a.state.p_pos)
+                # for l in world.landmarks:
+                #     dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos)))
+                #             for a in world.agents]
+                #     rew -= min(dists)
+                #     if min(dists) <= world.agents[0].size + world.landmarks[0].size:
+                #         cover += 1
+                #         # give bonus for cover landmarks
+                #         rew += 1
+                # # success bonus
+                # if cover == len(world.landmarks):
+                #     rew += 4 * len(world.landmarks) 
+        
         return rew
 
     def observation(self, agent, world, mode):
         # get positions of all entities in this agent's reference frame
         entity_pos = []
+        entity_gt_pos = []
         agent_pos = []
-        goal_id = self.goal_id[agent.id]
+        goal_id = world.pred_goal_id[agent.id]
         for land_id, entity in enumerate(world.landmarks):  # world.entities:
-            if goal_id == land_id:
-                world.landmarks[goal_id]
+            if int(goal_id) == int(land_id):
                 target_goal = entity.state.p_pos - agent.state.p_pos
             entity_pos.append(entity.state.p_pos - agent.state.p_pos)
+            entity_gt_pos.append(entity.state.p_pos)
         # entity colors
         entity_color = []
         for entity in world.landmarks:  # world.entities:
@@ -154,7 +162,7 @@ class Scenario(BaseScenario):
                 return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [target_goal] + other_pos + [id_vector])
                 #entity_pos + other_pos + [id_vector] + comm)
         elif mode == 'ctl':
-            return np.concatenate(agent_pos + entity_pos)
+            return np.concatenate(agent_pos + entity_gt_pos)
 
     def compute_macro_allocation(self, world):
         cost = np.zeros((len(world.agents), len(world.landmarks)))

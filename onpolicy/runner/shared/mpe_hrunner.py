@@ -18,6 +18,8 @@ class MPEHRunner(HRunner):
         self.envs.reset() 
         ctl_obs, ctl_rwd, ctl_done, ctl_info = self.envs.get_data("ctl")
         self.init_buffer(self.controller_buffer, self.controller_num_agents, ctl_obs, 'ctl')
+        self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
+        self.init_buffer(self.executor_buffer, self.executor_num_agents, self.exe_obs, 'exe')
 
         start = time.time()
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
@@ -29,23 +31,13 @@ class MPEHRunner(HRunner):
             ctl_step = 0
             exe_step = 0
             for step in range(self.episode_length):
+                
                 if step % (self.step_difference + 1) == 0:
                     # Sample actions
                     self.ctl_values, self.ctl_acts, self.ctl_act_log_probs, self.ctl_rnn_states, \
                     self.ctl_rnn_states_critic, self.ctl_actions_env = self.collect(ctl_step, 'ctl')
                     ctl_step += 1
                     self.envs.step(self.ctl_actions_env , 'ctl')
-
-                    if step == 0 and episode == 0:
-                        self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
-                        self.init_buffer(self.executor_buffer, self.executor_num_agents, self.exe_obs, 'exe')
-                        self.exe_values, self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, \
-                            self.exe_rnn_states_critic, self.exe_actions_env = self.collect(exe_step, 'exe')
-                    
-                    self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
-                    exe_data = self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos, self.exe_values, \
-                               self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, self.exe_rnn_states_critic
-                    self.insert(exe_data, self.executor_buffer, self.executor_num_agents,'exe')
 
                 elif step % (self.step_difference + 1) == self.step_difference:
                     # Sample actions
@@ -54,8 +46,14 @@ class MPEHRunner(HRunner):
                     exe_step += 1
                     # Obser reward and next obs
                     self.envs.step(self.exe_actions_env, 'exe')
+                    self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
+                    
+                    exe_data = self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos, self.exe_values,\
+                               self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, self.exe_rnn_states_critic
+                    self.insert(exe_data, self.executor_buffer, self.executor_num_agents,'exe')
+                    
                     # get controller datas from updated environment by executor step
-                    self.ctl_obs, self.ctl_rwd, self.ctl_done, self.ctl_info = self.envs.get_data('ctl')
+                    self.ctl_obs, self.ctl_rwd, self.ctl_done, self.ctl_info = self.envs.get_data('ctl')#todo:done
                     # insert data into controller buffer
                     ctl_data = self.ctl_obs, self.ctl_rwd, self.ctl_done, self.ctl_info, self.ctl_values, \
                                self.ctl_acts, self.ctl_act_log_probs, self.ctl_rnn_states, self.ctl_rnn_states_critic
@@ -115,8 +113,11 @@ class MPEHRunner(HRunner):
                         if agent_id == 0:
                             env_infos["success_rate"] = suc
 
-                executor_train_infos["average_episode_rewards"] = np.mean(self.executor_buffer.rewards) * self.episode_length
-                print("average episode rewards is {}".format(executor_train_infos["average_episode_rewards"]))
+                controller_train_infos["average_episode_controller_rewards"] = np.mean(self.controller_buffer.rewards) * (self.episode_length//self.step_difference)
+                executor_train_infos["average_episode_executor_rewards"] = np.mean(self.executor_buffer.rewards) * self.episode_length
+                print("controller average episode rewards is {}".format(controller_train_infos["average_episode_controller_rewards"]))
+                print("executor average episode rewards is {}".format(executor_train_infos["average_episode_executor_rewards"]))
+                self.log_train(controller_train_infos, total_num_steps)
                 self.log_train(executor_train_infos, total_num_steps)
                 self.log_env(env_infos, total_num_steps)
 
@@ -199,6 +200,32 @@ class MPEHRunner(HRunner):
 
         buffer.insert(share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs, values, rewards, masks)
 
+    def eval_act(self, trainer, obs, rnn_states, masks):
+        trainer.prep_rollout()
+        action, rnn_states = trainer.policy.act(np.concatenate(obs),
+                                            np.concatenate(rnn_states),
+                                            np.concatenate(masks),
+                                            deterministic=True)
+        actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
+        rnn_states = np.array(np.split(_t2n(rnn_states), self.n_rollout_threads))
+
+        if envs.action_space[0].__class__.__name__ == 'MultiDiscrete':
+            for i in range(envs.action_space[0].shape):
+                uc_actions_env = np.eye(envs.action_space[0].high[i]+1)[actions[:, :, i]]
+                if i == 0:
+                    actions_env = uc_actions_env
+                else:
+                    actions_env = np.concatenate((actions_env, uc_actions_env), axis=2)
+        elif envs.action_space[0].__class__.__name__ == 'Discrete':
+            actions_env = np.squeeze(np.eye(envs.action_space[0].n)[actions], 2)
+        else:
+            action = action.detach().clone()
+            action = nn.Sigmoid()(action)
+            actions_env = np.array(np.split(_t2n(action), self.n_rollout_threads))
+        
+        
+        return action, actions_env, rnn_states
+
     @torch.no_grad()
     def eval(self, total_num_steps):
         eval_episode_rewards = []
@@ -250,49 +277,37 @@ class MPEHRunner(HRunner):
         
         all_frames = []
         for episode in range(self.all_args.render_episodes):
-            obs = envs.reset()
+            envs.reset()
             if self.all_args.save_gifs:
                 image = envs.render('rgb_array')[0][0]
                 all_frames.append(image)
             else:
                 envs.render('human')
 
-            rnn_states = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-            masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+            ctl_rnn_states = np.zeros((self.n_rollout_threads, self.controller_num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            ctl_masks = np.ones((self.n_rollout_threads, self.controller_num_agents, 1), dtype=np.float32)
+            exe_rnn_states = np.zeros((self.n_rollout_threads, self.executor_num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            exe_masks = np.ones((self.n_rollout_threads, self.executor_num_agents, 1), dtype=np.float32)
             
             episode_rewards = []
             
             for step in range(self.episode_length):
                 calc_start = time.time()
-
-                self.trainer.prep_rollout()
-                action, rnn_states = self.trainer.policy.act(np.concatenate(obs),
-                                                    np.concatenate(rnn_states),
-                                                    np.concatenate(masks),
-                                                    deterministic=True)
-                actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
-                rnn_states = np.array(np.split(_t2n(rnn_states), self.n_rollout_threads))
-
-                if envs.action_space[0].__class__.__name__ == 'MultiDiscrete':
-                    for i in range(envs.action_space[0].shape):
-                        uc_actions_env = np.eye(envs.action_space[0].high[i]+1)[actions[:, :, i]]
-                        if i == 0:
-                            actions_env = uc_actions_env
-                        else:
-                            actions_env = np.concatenate((actions_env, uc_actions_env), axis=2)
-                elif envs.action_space[0].__class__.__name__ == 'Discrete':
-                    actions_env = np.squeeze(np.eye(envs.action_space[0].n)[actions], 2)
+                if step % (self.step_difference + 1) == 0:
+                    ctl_obs, ctl_rwds, ctl_dones, ctl_infos = envs.get_data('ctl')
+                    action, actions_env, ctl_rnn_states = self.eval_act(self.controller_trainer, ctl_obs, ctl_rnn_states, ctl_masks)
+                    envs.step(actions_env,'ctl')
+                    ctl_rnn_states[ctl_dones == True] = np.zeros(((ctl_dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
+                    ctl_masks = np.ones((self.n_rollout_threads, self.controller_num_agents, 1), dtype=np.float32)
                 else:
-                    raise NotImplementedError
-
+                    exe_obs, exe_rwds, exe_dones, exe_infos = envs.get_data('exe')
+                    action, actions_env, exe_rnn_states = self.eval_act(self.executor_trainer, exe_obs, exe_rnn_states, exe_masks)
+                    envs.step(actions_env,'exe')
+                    exe_rnn_states[exe_dones == True] = np.zeros(((exe_dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
+                    exe_masks = np.ones((self.n_rollout_threads, self.executor_um_agents, 1), dtype=np.float32)
+                    exe_episode_rewards.append(exe_rwds)
                 # Obser reward and next obs
-                obs, rewards, dones, infos = envs.step(actions_env)
-                episode_rewards.append(rewards)
-
-                rnn_states[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
-                masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
-                masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
-
+                
                 if self.all_args.save_gifs:
                     image = envs.render('rgb_array')[0][0]
                     all_frames.append(image)
@@ -303,7 +318,7 @@ class MPEHRunner(HRunner):
                 else:
                     envs.render('human')
 
-            print("average episode rewards is: " + str(np.mean(np.sum(np.array(episode_rewards), axis=0))))
+            print("average exe episode rewards is: " + str(np.mean(np.sum(np.array(exe_episode_rewards), axis=0))))
 
         if self.all_args.save_gifs:
             imageio.mimsave(str(self.gif_dir) + '/render.gif', all_frames, duration=self.all_args.ifi)

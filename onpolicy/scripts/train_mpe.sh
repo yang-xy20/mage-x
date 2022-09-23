@@ -4,7 +4,7 @@ scenario="simple_spread"  # simple_speaker_listener # simple_reference
 num_landmarks=10
 num_agents=10
 algo="rmappo"
-exp="hier_rel_dis_new_loss"
+exp="revise_obs_no_entropy_max_dis_new_loss"
 seed_max=1
 
 echo "env is ${env}, scenario is ${scenario}, algo is ${algo}, exp is ${exp}, max seed is ${seed_max}"
