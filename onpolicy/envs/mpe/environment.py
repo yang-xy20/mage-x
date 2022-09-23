@@ -17,15 +17,15 @@ class MultiAgentEnv(gym.Env):
     def __init__(self, world, reset_callback=None, reward_callback=None,
                  observation_callback=None, info_callback=None,
                  done_callback=None, post_step_callback=None,
-                 shared_viewer=True, discrete_action=True, use_mlp_encoder=False):
+                 shared_viewer=True, discrete_action=True, use_gnn = False):
 
         self.world = world
         self.world_length = self.world.world_length
         self.current_step = 0
         self.agents = self.world.policy_agents
-        self.use_mlp_encoder = use_mlp_encoder
         # set required vectorized gym env property
         self.n = len(world.policy_agents)
+        self.use_gnn = use_gnn
         # scenario callbacks
         self.reset_callback = reset_callback
         self.reward_callback = reward_callback
@@ -104,37 +104,38 @@ class MultiAgentEnv(gym.Env):
             self.ctl_action_space.append(spaces.Box(low=0.0, high=1.0, shape=(self.n,), dtype=np.float32))
             
             # observation space
-            if self.use_mlp_encoder:
-                observation_space = {}
-                observation_space['agent_state'] = spaces.Box(low=-np.inf, high=+np.inf, shape=(4+self.n,), dtype=np.float32)
-                observation_space['other_state'] = spaces.Box(low=-np.inf, high=+np.inf, shape=(2*(self.n-1),), dtype=np.float32)
-                observation_space['entity_state'] = spaces.Box(low=-np.inf, high=+np.inf, shape=(2*self.world.num_landmarks,), dtype=np.float32)
-                observation_space['comm'] = spaces.Box(low=-np.inf, high=+np.inf, shape=(2*self.n,), dtype=np.float32)
-                share_observation_space = observation_space.copy()
-                observation_space = gym.spaces.Dict(observation_space)
-                share_observation_space = gym.spaces.Dict(share_observation_space)
-                self.observation_space.append(observation_space)
-                self.share_observation_space.append(share_observation_space)
-            else:
-                obs_dim = len(observation_callback(agent, self.world, 'exe'))
-                share_obs_dim += obs_dim
-                self.observation_space.append(spaces.Box(
-                    low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
-                self.exe_observation_space.append(spaces.Box(
-                    low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
+            
+            obs_dim = len(observation_callback(agent, self.world, 'exe'))
+            share_obs_dim += obs_dim
+            self.observation_space.append(spaces.Box(
+                low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
+            self.exe_observation_space.append(spaces.Box(
+                low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
             agent.action.c = np.zeros(self.world.dim_c)
-        if not self.use_mlp_encoder:
+        
+        if self.use_gnn:
+            self.ctl_observation_space = {}
+            self.ctl_observation_space['agent_pos'] = gym.spaces.Box(
+                        low=0, high=1, shape=(self.n, 2), dtype=np.float32)
+            self.ctl_observation_space['land_pos'] = gym.spaces.Box(
+                        low=0, high=1, shape=(self.n, 2), dtype=np.float32)
+            self.ctl_observation_space['rel_dis'] = gym.spaces.Box(
+                        low=0, high=1, shape=(self.n, self.n, 1), dtype=np.float32)
+            self.ctl_share_observation_space = self.ctl_observation_space.copy()
+            self.ctl_observation_space = [gym.spaces.Dict(self.ctl_observation_space)]
+            self.ctl_share_observation_space = [gym.spaces.Dict(self.ctl_share_observation_space)]           
+        else:
             ctl_obs_dim = len(observation_callback(agent, self.world, 'ctl'))
             ctl_share_obs_dim += ctl_obs_dim
             self.ctl_observation_space = [spaces.Box(
                 low=-np.inf, high=+np.inf, shape=(ctl_obs_dim,), dtype=np.float32)]
-            self.share_observation_space = [spaces.Box(
-                low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
-            self.exe_share_observation_space = [spaces.Box(
-                low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
             self.ctl_share_observation_space = [spaces.Box(
-                low=-np.inf, high=+np.inf, shape=(ctl_share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
-        
+            low=-np.inf, high=+np.inf, shape=(ctl_share_obs_dim,), dtype=np.float32)]
+        self.share_observation_space = [spaces.Box(
+            low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
+        self.exe_share_observation_space = [spaces.Box(
+            low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
+    
         # rendering
         self.shared_viewer = shared_viewer
         if self.shared_viewer:

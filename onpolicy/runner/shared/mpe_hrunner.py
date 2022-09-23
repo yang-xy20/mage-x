@@ -13,6 +13,9 @@ class MPEHRunner(HRunner):
     """Runner class to perform training, evaluation. and data collection for the MPEs. See parent class for details."""
     def __init__(self, config):
         super(MPEHRunner, self).__init__(config)
+        self.use_gnn = self.all_args.use_gnn
+        if self.use_gnn:
+            self.init_ctl_input()
 
     def run(self):
         self.envs.reset() 
@@ -125,18 +128,39 @@ class MPEHRunner(HRunner):
             if episode % self.eval_interval == 0 and self.use_eval:
                 self.eval(total_num_steps)
     
+    def init_ctl_input(self):
+        self.ctl_input= {}
+        self.ctl_input['agent_pos'] = np.zeros((self.n_rollout_threads, self.controller_num_agents, self.num_agents, 2))
+        self.ctl_input['land_pos'] = np.zeros((self.n_rollout_threads, self.controller_num_agents, self.num_agents, 2))
+        self.ctl_input['rel_dis'] = np.zeros((self.n_rollout_threads, self.controller_num_agents, self.num_agents, self.num_agents, 1))
+        self.ctl_share_input = self.ctl_input.copy()
+
+    def insert_ctl_data(self, obs):
+        for e in range(self.n_rollout_threads):
+            for a in range(self.controller_num_agents):
+                for key in self.ctl_input.keys():
+                    self.ctl_input[key][e, a] = obs[e, a][key]
+        self.ctl_share_input = self.ctl_input.copy()
+            
     def init_buffer(self, buffer, num_agents, obs, mode):
         if self.use_centralized_V and mode =='exe':
             share_obs = obs.reshape(self.n_rollout_threads, -1)
             share_obs = np.expand_dims(share_obs, 1).repeat(num_agents, 1)
         else:
             share_obs = obs
-        buffer.share_obs[0] = share_obs.copy()
-        buffer.obs[0] = obs.copy()
+        if mode == 'ctl' and self.use_gnn:
+            self.insert_ctl_data(obs)
+            for key in self.ctl_input.keys():
+                buffer.obs[key][0] = self.ctl_input[key].copy()
+            for key in self.ctl_share_input.keys():
+                buffer.share_obs[key][0] = self.ctl_share_input[key].copy()
+        else:
+            buffer.share_obs[0] = share_obs.copy()
+            buffer.obs[0] = obs.copy()
 
     def learn_update(self, trainer, buffer, episode, episodes, mode):
         # compute return and update network
-        self.compute(trainer, buffer)
+        self.compute(trainer, buffer, mode)
         train_infos = self.train(trainer, buffer, mode)
         return train_infos
 
@@ -147,6 +171,13 @@ class MPEHRunner(HRunner):
             trainer = self.controller_trainer
             buffer = self.controller_buffer
             action_space = self.envs.ctl_action_space
+            if self.use_gnn:
+                concat_share_obs = {}
+                concat_obs = {}
+                for key in buffer.share_obs.keys():
+                    concat_share_obs[key] = np.concatenate(buffer.share_obs[key][step])
+                for key in buffer.obs.keys():
+                    concat_obs[key] = np.concatenate(buffer.obs[key][step])
         elif mode == 'exe':
             action_space = self.envs.exe_action_space
             trainer = self.executor_trainer
@@ -154,13 +185,21 @@ class MPEHRunner(HRunner):
         else:
             print('type of envs is wrong!')
             exit()
-        trainer.prep_rollout()
-        value, action, action_log_prob, rnn_states, rnn_states_critic \
-            = trainer.policy.get_actions(np.concatenate(buffer.share_obs[step]),
-                            np.concatenate(buffer.obs[step]),
-                            np.concatenate(buffer.rnn_states[step]),
-                            np.concatenate(buffer.rnn_states_critic[step]),
-                            np.concatenate(buffer.masks[step]))
+        trainer.prep_rollout() 
+        if mode == 'ctl' and  self.use_gnn:
+            value, action, action_log_prob, rnn_states, rnn_states_critic \
+                = trainer.policy.get_actions(concat_share_obs,
+                                concat_obs,
+                                np.concatenate(buffer.rnn_states[step]),
+                                np.concatenate(buffer.rnn_states_critic[step]),
+                                np.concatenate(buffer.masks[step]))
+        else:
+            value, action, action_log_prob, rnn_states, rnn_states_critic \
+                = trainer.policy.get_actions(np.concatenate(buffer.share_obs[step]),
+                                np.concatenate(buffer.obs[step]),
+                                np.concatenate(buffer.rnn_states[step]),
+                                np.concatenate(buffer.rnn_states_critic[step]),
+                                np.concatenate(buffer.masks[step]))
         # [self.envs, agents, dim]
         values = np.array(np.split(_t2n(value), self.n_rollout_threads))
         actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
@@ -191,12 +230,17 @@ class MPEHRunner(HRunner):
         rnn_states_critic[dones == True] = np.zeros(((dones == True).sum(), *buffer.rnn_states_critic.shape[3:]), dtype=np.float32)
         masks = np.ones((self.n_rollout_threads, num_agents, 1), dtype=np.float32)
         masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
-
-        if self.use_centralized_V and mode=='exe':
-            share_obs = obs.reshape(self.n_rollout_threads, -1)
-            share_obs = np.expand_dims(share_obs, 1).repeat(num_agents, axis=1)
+        
+        if mode == 'ctl' and self.use_gnn:
+            self.insert_ctl_data(obs)
+            obs = self.ctl_input
+            share_obs = self.ctl_share_input
         else:
-            share_obs = obs
+            if self.use_centralized_V and mode=='exe':
+                share_obs = obs.reshape(self.n_rollout_threads, -1)
+                share_obs = np.expand_dims(share_obs, 1).repeat(num_agents, axis=1)
+            else:
+                share_obs = obs
 
         buffer.insert(share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs, values, rewards, masks)
 

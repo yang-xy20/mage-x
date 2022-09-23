@@ -42,19 +42,30 @@ class SharedReplayBuffer(object):
         self._use_popart = args.use_popart
         self._use_valuenorm = args.use_valuenorm
         self._use_proper_time_limits = args.use_proper_time_limits
+        self._mixed_obs = False
 
         obs_shape = get_shape_from_obs_space(obs_space)
         share_obs_shape = get_shape_from_obs_space(cent_obs_space)
+        if 'Dict' in obs_shape.__class__.__name__:
+            self._mixed_obs = True
+            
+            self.obs = {}
+            self.share_obs = {}
+            for key in obs_shape:
+                self.obs[key] = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *obs_shape[key].shape), dtype=np.float32)
+            for key in share_obs_shape:
+                self.share_obs[key] = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *share_obs_shape[key].shape), dtype=np.float32)
+        
+        else: 
+            if type(obs_shape[-1]) == list:
+                obs_shape = obs_shape[:1]
 
-        if type(obs_shape[-1]) == list:
-            obs_shape = obs_shape[:1]
+            if type(share_obs_shape[-1]) == list:
+                share_obs_shape = share_obs_shape[:1]
 
-        if type(share_obs_shape[-1]) == list:
-            share_obs_shape = share_obs_shape[:1]
-
-        self.share_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *share_obs_shape),
-                                  dtype=np.float32)
-        self.obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *obs_shape), dtype=np.float32)
+            self.share_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *share_obs_shape),
+                                    dtype=np.float32)
+            self.obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *obs_shape), dtype=np.float32)
 
         self.rnn_states = np.zeros(
             (self.episode_length + 1, self.n_rollout_threads, num_agents, self.recurrent_N, self.hidden_size),
@@ -103,8 +114,14 @@ class SharedReplayBuffer(object):
         :param active_masks: (np.ndarray) denotes whether an agent is active or dead in the env.
         :param available_actions: (np.ndarray) actions available to each agent. If None, all actions are available.
         """
-        self.share_obs[self.step + 1] = share_obs.copy()
-        self.obs[self.step + 1] = obs.copy()
+        if self._mixed_obs:
+            for key in self.share_obs.keys():
+                self.share_obs[key][self.step + 1] = share_obs[key].copy()
+            for key in self.obs.keys():
+                self.obs[key][self.step + 1] = obs[key].copy()
+        else:
+            self.share_obs[self.step + 1] = share_obs.copy()
+            self.obs[self.step + 1] = obs.copy()
         self.rnn_states[self.step + 1] = rnn_states_actor.copy()
         self.rnn_states_critic[self.step + 1] = rnn_states_critic.copy()
         self.actions[self.step] = actions.copy()
@@ -158,8 +175,14 @@ class SharedReplayBuffer(object):
 
     def after_update(self):
         """Copy last timestep data to first index. Called after update to model."""
-        self.share_obs[0] = self.share_obs[-1].copy()
-        self.obs[0] = self.obs[-1].copy()
+        if self._mixed_obs:
+            for key in self.share_obs.keys():
+                self.share_obs[key][0] = self.share_obs[key][-1].copy()
+            for key in self.obs.keys():
+                self.obs[key][0] = self.obs[key][-1].copy()
+        else:
+            self.share_obs[0] = self.share_obs[-1].copy()
+            self.obs[0] = self.obs[-1].copy()
         self.rnn_states[0] = self.rnn_states[-1].copy()
         self.rnn_states_critic[0] = self.rnn_states_critic[-1].copy()
         self.masks[0] = self.masks[-1].copy()
@@ -257,10 +280,21 @@ class SharedReplayBuffer(object):
         rows, cols = _shuffle_agent_grid(batch_size, num_agents)
 
         # keep (num_agent, dim)
-        share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[2:])
-        share_obs = share_obs[rows, cols]
-        obs = self.obs[:-1].reshape(-1, *self.obs.shape[2:])
-        obs = obs[rows, cols]
+        if self._mixed_obs:
+            share_obs = {}
+            obs = {}
+            for key in self.share_obs.keys():
+                share_obs[key] = self.share_obs[key][:-1].reshape(-1, *self.share_obs[key].shape[2:])
+                share_obs[key] = share_obs[key][rows, cols]
+            for key in self.obs.keys():
+                obs[key] = self.obs[key][:-1].reshape(-1, *self.obs[key].shape[2:])
+                obs[key] = obs[key][rows, cols]
+        else:
+            share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[2:])
+            share_obs = share_obs[rows, cols]
+            obs = self.obs[:-1].reshape(-1, *self.obs.shape[2:])
+            obs = obs[rows, cols]
+        
         rnn_states = self.rnn_states[:-1].reshape(-1, *self.rnn_states.shape[2:])
         rnn_states = rnn_states[rows, cols]
         rnn_states_critic = self.rnn_states_critic[:-1].reshape(-1, *self.rnn_states_critic.shape[2:])
@@ -285,8 +319,16 @@ class SharedReplayBuffer(object):
 
         for indices in sampler:
             # [L,T,N,Dim]-->[L*T,N,Dim]-->[index,N,Dim]-->[index*N, Dim]
-            share_obs_batch = share_obs[indices].reshape(-1, *share_obs.shape[2:])
-            obs_batch = obs[indices].reshape(-1, *obs.shape[2:])
+            if self._mixed_obs:
+                share_obs_batch = {}
+                obs_batch = {}
+                for key in share_obs.keys():
+                    share_obs_batch[key] = share_obs[key][indices].reshape(-1, *share_obs[key].shape[2:])
+                for key in obs.keys():
+                    obs_batch[key] = obs[key][indices].reshape(-1, *obs[key].shape[2:])
+            else:
+                share_obs_batch = share_obs[indices].reshape(-1, *share_obs.shape[2:])
+                obs_batch = obs[indices].reshape(-1, *obs.shape[2:])
             rnn_states_batch = rnn_states[indices].reshape(-1, *rnn_states.shape[2:])
             rnn_states_critic_batch = rnn_states_critic[indices].reshape(-1, *rnn_states_critic.shape[2:])
             actions_batch = actions[indices].reshape(-1, *actions.shape[2:])

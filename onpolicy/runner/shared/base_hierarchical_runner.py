@@ -137,7 +137,7 @@ class HRunner(object):
         # policy network
         self.controller_algo_module = Policy(self.all_args, self.envs.ctl_observation_space[0],
                                                  self.envs.ctl_share_observation_space[0],
-                                                 self.envs.ctl_action_space[0], use_macro=True, device=self.device)
+                                                 self.envs.ctl_action_space[0], device=self.device)
 
         self.executor_algo_module = Policy(self.all_args, self.envs.exe_observation_space[0],
                                                self.envs.exe_share_observation_space[0],
@@ -219,7 +219,7 @@ class HRunner(object):
         raise NotImplementedError
 
     @torch.no_grad()
-    def compute(self, trainer, buffer):
+    def compute(self, trainer, buffer, mode):
         trainer.prep_rollout()
 
         if 'transformer' in self.algorithm_name:
@@ -227,6 +227,14 @@ class HRunner(object):
                                                          np.concatenate(buffer.obs[-1]),
                                                          np.concatenate(buffer.rnn_states_critic[-1]),
                                                          np.concatenate(buffer.masks[-1]))
+        elif self.use_gnn and mode == 'ctl':
+            concat_share_obs = {}
+            for key in buffer.share_obs.keys():
+                concat_share_obs[key] = np.concatenate(buffer.share_obs[key][-1])
+            next_values = trainer.policy.get_values(concat_share_obs,
+                                                         np.concatenate(buffer.rnn_states_critic[-1]),
+                                                         np.concatenate(buffer.masks[-1]))
+
         else:
             next_values = trainer.policy.get_values(np.concatenate(buffer.share_obs[-1]),
                                                          np.concatenate(buffer.rnn_states_critic[-1]),

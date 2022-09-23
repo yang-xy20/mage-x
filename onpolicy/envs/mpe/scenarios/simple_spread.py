@@ -8,13 +8,13 @@ from scipy.optimize import linear_sum_assignment
 class Scenario(BaseScenario):
     def make_world(self, args):
         world = World()
+        world.use_gnn = args.use_gnn
         world.world_length = args.episode_length
         # set any world properties first
         world.dim_c = 2
         world.num_agents = args.num_agents
         world.num_landmarks = args.num_landmarks  # 3
         world.collaborative = True
-        world.use_mlp_encoder = args.use_mlp_encoder
         world.pred_goal_id = np.zeros((world.num_agents))
         # add agents
         world.agents = [Agent() for i in range(world.num_agents)]
@@ -128,41 +128,42 @@ class Scenario(BaseScenario):
         entity_pos = []
         entity_gt_pos = []
         agent_pos = []
+        comm = []
+        other_pos = []
+        rel_pos = np.zeros((world.num_agents, world.num_landmarks, 1))
         goal_id = world.pred_goal_id[agent.id]
         for land_id, entity in enumerate(world.landmarks):  # world.entities:
             if int(goal_id) == int(land_id):
                 target_goal = entity.state.p_pos - agent.state.p_pos
             entity_pos.append(entity.state.p_pos - agent.state.p_pos)
             entity_gt_pos.append(entity.state.p_pos)
+            for agent_id, other in enumerate(world.agents):
+                rel_pos[agent_id, land_id] = np.sqrt(np.sum(np.square(entity.state.p_pos - other.state.p_pos)))
+                if int(goal_id) == int(land_id):
+                    agent_pos.append(other.state.p_pos)
+                    if other is agent:
+                        continue
+                    comm.append(other.state.c)
+                    other_pos.append(other.state.p_pos - agent.state.p_pos)
         # entity colors
         entity_color = []
         for entity in world.landmarks:  # world.entities:
             entity_color.append(entity.color)
-        # communication of all other agents
-        comm = []
-        other_pos = []
-        for other in world.agents:
-            agent_pos.append(other.state.p_pos)
-            if other is agent:
-                continue
-            comm.append(other.state.c)
-            other_pos.append(other.state.p_pos - agent.state.p_pos)
-        
+        # communication of all other agents        
         id_vector = np.zeros(len(world.agents))
         id_vector[agent.id] = 1
         if mode == 'exe':
-            if world.use_mlp_encoder:
+            return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [target_goal] + other_pos + [id_vector])
+            #entity_pos + other_pos + [id_vector] + comm)
+        elif mode == 'ctl':
+            if world.use_gnn:
                 info = {}
-                info['agent_state'] = np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [id_vector])
-                info['other_state'] = np.concatenate(other_pos)
-                info['entity_state'] = np.concatenate(entity_pos)
-                info['comm'] = np.concatenate(comm)
+                info['agent_pos'] = np.stack(agent_pos)
+                info['land_pos'] = np.stack(entity_gt_pos)
+                info['rel_dis'] = rel_pos
                 return info
             else:
-                return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [target_goal] + other_pos + [id_vector])
-                #entity_pos + other_pos + [id_vector] + comm)
-        elif mode == 'ctl':
-            return np.concatenate(agent_pos + entity_gt_pos)
+                return np.concatenate(agent_pos + entity_gt_pos)
 
     def compute_macro_allocation(self, world):
         cost = np.zeros((len(world.agents), len(world.landmarks)))

@@ -66,6 +66,9 @@ def parse_args(args, parser):
     parser.add_argument("--use_macro", action="store_true", 
                         default=False, 
                         help="by default False. If True, use_macro_micro")
+    parser.add_argument("--use_gnn", action="store_true", 
+                        default=False, 
+                        help="by default False. If True, use_gnn select goals")
     parser.add_argument('--step_difference', type=int, default=2, help="local_num_step")
     
     all_args = parser.parse_known_args(args)[0]
