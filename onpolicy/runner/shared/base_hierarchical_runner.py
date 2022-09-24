@@ -137,11 +137,11 @@ class HRunner(object):
         # policy network
         self.controller_algo_module = Policy(self.all_args, self.envs.ctl_observation_space[0],
                                                  self.envs.ctl_share_observation_space[0],
-                                                 self.envs.ctl_action_space[0], device=self.device)
+                                                 self.envs.ctl_action_space[0], use_macro=True ,device=self.device)
 
         self.executor_algo_module = Policy(self.all_args, self.envs.exe_observation_space[0],
                                                self.envs.exe_share_observation_space[0],
-                                               self.envs.exe_action_space[0], device=self.device)
+                                               self.envs.exe_action_space[0], use_macro=False, device=self.device)
 
         # algorithm
         self.controller_trainer = TrainAlgo(self.all_args, self.controller_algo_module, device=self.device)
