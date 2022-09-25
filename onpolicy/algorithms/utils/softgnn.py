@@ -209,7 +209,7 @@ class AttentionalGNN(nn.Module):
         #scores = score1
         #scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1]
 
-        return score1
+        return desc0
         
 
 class Perception_Graph(torch.nn.Module):
@@ -222,7 +222,7 @@ class Perception_Graph(torch.nn.Module):
         self.node_init = MLP([2] + layers + [feature_dim])
         nn.init.constant_(self.node_init[-1].bias, 0.0)
         self.dis_init = MLP([1, feature_dim, feature_dim])
-        self.merge = MLP([num_agents, feature_dim, 1])
+        self.merge = MLP([feature_dim, feature_dim, 1])
         nn.init.constant_(self.dis_init[-1].bias, 0.0)
         self.gnn = AttentionalGNN(feature_dim, gnn_layers)
         
@@ -237,7 +237,7 @@ class Perception_Graph(torch.nn.Module):
         .reshape(rel_shape[0], -1, rel_shape[1], rel_shape[2])
 
         edge = self.gnn(land_pos, agent_pos, land_agent_dis)
-        edge = self.merge(edge.transpose(1,2)).reshape(rel_shape[0], -1)
+        edge = self.merge(edge).reshape(rel_shape[0], -1)
         return edge
     
     @property

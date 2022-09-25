@@ -124,14 +124,16 @@ class MultiAgentEnv(gym.Env):
                         low=0, high=1, shape=(self.n-1, 2), dtype=np.float32)
             exe_observation_space['target_goal'] = gym.spaces.Box(
                         low=0, high=1, shape=(1, 2), dtype=np.float32)
-            exe_share_observation_space = self.exe_observation_space.copy()
-            exe_observation_space = [gym.spaces.Dict(self.exe_observation_space)]
-            exe_share_observation_space = [gym.spaces.Dict(self.exe_share_observation_space)]  
-            
-            self.observation_space = [spaces.Box(
-                low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32) for _ in range(self.n)]  # [-inf,inf]
-            self.exe_observation_space = [spaces.Box(
-                low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32) for _ in range(self.n)]  # [-inf,inf]
+            exe_share_observation_space = exe_observation_space.copy()
+            self.exe_observation_space = [gym.spaces.Dict(exe_observation_space) for _ in range(self.n)]
+            self.exe_share_observation_space = [gym.spaces.Dict(exe_share_observation_space) for _ in range(self.n)]
+            self.observation_space = self.exe_observation_space.copy()
+            self.share_observation_space = self.exe_share_observation_space.copy()
+        else:
+            self.share_observation_space = [spaces.Box(
+            low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
+            self.exe_share_observation_space = [spaces.Box(
+                low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
         
         if self.use_gnn:
             self.ctl_observation_space = {}
@@ -151,10 +153,6 @@ class MultiAgentEnv(gym.Env):
                 low=-np.inf, high=+np.inf, shape=(ctl_obs_dim,), dtype=np.float32)]
             self.ctl_share_observation_space = [spaces.Box(
             low=-np.inf, high=+np.inf, shape=(ctl_share_obs_dim,), dtype=np.float32)]
-        self.share_observation_space = [spaces.Box(
-            low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
-        self.exe_share_observation_space = [spaces.Box(
-            low=-np.inf, high=+np.inf, shape=(share_obs_dim,), dtype=np.float32) for _ in range(self.n)]
     
         # rendering
         self.shared_viewer = shared_viewer
@@ -219,7 +217,7 @@ class MultiAgentEnv(gym.Env):
                 if 'success_rate' in env_info.keys():
                     info['success_rate'] = env_info['success_rate']
                 info_n.append(info)
-
+    
         # all agents get total reward in cooperative case, if shared reward, all agents have the same reward, and reward is sum
         reward = np.sum(reward_n)
         if self.shared_reward:

@@ -159,7 +159,7 @@ class Scenario(BaseScenario):
         if mode == 'exe':
             if world.use_exe_gnn:
                 info = {}
-                info['agent_state'] = np.stack([agent.state.p_vel]+[agent.state.p_pos])
+                info['agent_state'] = np.concatenate([agent.state.p_vel]+[agent.state.p_pos])
                 info['target_goal'] = np.stack([target_gt_goal])
                 info['other_pos'] = np.stack(other_gt_pos)
                 # info['agent_id'] = np.stack(id_vector)

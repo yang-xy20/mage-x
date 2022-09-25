@@ -8,7 +8,7 @@ from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.popart import PopArt
 from onpolicy.utils.util import get_shape_from_obs_space
 from onpolicy.algorithms.utils.softgnn import Perception_Graph, LinearAssignment
-from onpolicy.algorithms.utils.hardgnn import Topk_Graph
+from onpolicy.algorithms.utils.MAGIC.magic import Topk_Graph
 
 
 class R_Actor(nn.Module):
@@ -38,7 +38,7 @@ class R_Actor(nn.Module):
             if use_macro:
                 self.base = Perception_Graph(args.num_agents)
             else:
-                self.base = Topk_Graph()
+                self.base = Topk_Graph(args.num_agents, args.hidden_size, device)
         else:
             self._mixed_obs = False
             base = CNNBase if len(obs_shape) == 3 else MLPBase
@@ -154,7 +154,7 @@ class R_Critic(nn.Module):
             if use_macro:
                 self.base = Perception_Graph(args.num_agents)
             else:
-                self.base = Topk_Graph()
+                self.base = Topk_Graph(args.num_agents, args.hidden_size, device)
         else:
             self._mixed_obs = False
             base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
