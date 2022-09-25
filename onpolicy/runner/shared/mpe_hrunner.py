@@ -14,8 +14,11 @@ class MPEHRunner(HRunner):
     def __init__(self, config):
         super(MPEHRunner, self).__init__(config)
         self.use_gnn = self.all_args.use_gnn
+        self.use_exe_gnn = self.all_args.use_exe_gnn
         if self.use_gnn:
             self.init_ctl_input()
+        if self.use_exe_gnn:
+            self.init_exe_input()
 
     def run(self):
         self.envs.reset() 
@@ -134,6 +137,13 @@ class MPEHRunner(HRunner):
         self.ctl_input['land_pos'] = np.zeros((self.n_rollout_threads, self.controller_num_agents, self.num_agents, 2))
         self.ctl_input['rel_dis'] = np.zeros((self.n_rollout_threads, self.controller_num_agents, self.num_agents, self.num_agents, 1))
         self.ctl_share_input = self.ctl_input.copy()
+    
+    def init_exe_input(self):
+        self.exe_input= {}
+        self.exe_input['agent_state'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 4))
+        self.exe_input['target_goal'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 2))
+        self.exe_input['other_pos'] = np.zeros((self.n_rollout_threads, self.num_agents, self.num_agents-1, 2))
+        self.exe_share_input = self.exe_input.copy()
 
     def insert_ctl_data(self, obs):
         for e in range(self.n_rollout_threads):
@@ -141,6 +151,13 @@ class MPEHRunner(HRunner):
                 for key in self.ctl_input.keys():
                     self.ctl_input[key][e, a] = obs[e, a][key]
         self.ctl_share_input = self.ctl_input.copy()
+
+    def insert_exe_data(self, obs):
+        for e in range(self.n_rollout_threads):
+            for a in range(self.num_agents):
+                for key in self.exe_input.keys():
+                    self.exe_input[key][e, a] = obs[e, a][key]
+        self.exe_share_input = self.exe_input.copy()
             
     def init_buffer(self, buffer, num_agents, obs, mode):
         if self.use_centralized_V and mode =='exe':
@@ -154,10 +171,16 @@ class MPEHRunner(HRunner):
                 buffer.obs[key][0] = self.ctl_input[key].copy()
             for key in self.ctl_share_input.keys():
                 buffer.share_obs[key][0] = self.ctl_share_input[key].copy()
+        elif mode == 'exe' and self.use_exe_gnn:
+            self.insert_exe_data(obs)
+            for key in self.exe_input.keys():
+                buffer.obs[key][0] = self.exe_input[key].copy()
+            for key in self.exe_share_input.keys():
+                buffer.share_obs[key][0] = self.exe_share_input[key].copy()
         else:
             buffer.share_obs[0] = share_obs.copy()
             buffer.obs[0] = obs.copy()
-
+    
     def learn_update(self, trainer, buffer, episode, episodes, mode):
         # compute return and update network
         self.compute(trainer, buffer, mode)
@@ -182,11 +205,18 @@ class MPEHRunner(HRunner):
             action_space = self.envs.exe_action_space
             trainer = self.executor_trainer
             buffer = self.executor_buffer
+            if self.use_exe_gnn:
+                concat_share_obs = {}
+                concat_obs = {}
+                for key in buffer.share_obs.keys():
+                    concat_share_obs[key] = np.concatenate(buffer.share_obs[key][step])
+                for key in buffer.obs.keys():
+                    concat_obs[key] = np.concatenate(buffer.obs[key][step])
         else:
             print('type of envs is wrong!')
             exit()
         trainer.prep_rollout() 
-        if mode == 'ctl' and  self.use_gnn:
+        if (mode == 'ctl' and  self.use_gnn) or (mode == 'exe' and  self.use_exe_gnn):
             value, action, action_log_prob, rnn_states, rnn_states_critic \
                 = trainer.policy.get_actions(concat_share_obs,
                                 concat_obs,
@@ -235,6 +265,10 @@ class MPEHRunner(HRunner):
             self.insert_ctl_data(obs)
             obs = self.ctl_input
             share_obs = self.ctl_share_input
+        elif mode == 'exe' and self.use_exe_gnn:
+            self.insert_exe_data(obs)
+            obs = self.exe_input
+            share_obs = self.exe_share_input
         else:
             if self.use_centralized_V and mode=='exe':
                 share_obs = obs.reshape(self.n_rollout_threads, -1)

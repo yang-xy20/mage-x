@@ -55,7 +55,7 @@ class SharedReplayBuffer(object):
                 self.obs[key] = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *obs_shape[key].shape), dtype=np.float32)
             for key in share_obs_shape:
                 self.share_obs[key] = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *share_obs_shape[key].shape), dtype=np.float32)
-        
+                
         else: 
             if type(obs_shape[-1]) == list:
                 obs_shape = obs_shape[:1]
@@ -350,12 +350,6 @@ class SharedReplayBuffer(object):
                   adv_targ, available_actions_batch
 
     def feed_forward_generator(self, advantages, num_mini_batch=None, mini_batch_size=None):
-        """
-        Yield training data for MLP policies.
-        :param advantages: (np.ndarray) advantage estimates.
-        :param num_mini_batch: (int) number of minibatches to split the batch into.
-        :param mini_batch_size: (int) number of samples in each minibatch.
-        """
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
         batch_size = n_rollout_threads * episode_length * num_agents
 
@@ -364,16 +358,23 @@ class SharedReplayBuffer(object):
                 "PPO requires the number of processes ({}) "
                 "* number of steps ({}) * number of agents ({}) = {} "
                 "to be greater than or equal to the number of PPO mini batches ({})."
-                "".format(n_rollout_threads, episode_length, num_agents,
-                          n_rollout_threads * episode_length * num_agents,
+                "".format(n_rollout_threads, episode_length, num_agents, n_rollout_threads * episode_length * num_agents,
                           num_mini_batch))
             mini_batch_size = batch_size // num_mini_batch
 
         rand = torch.randperm(batch_size).numpy()
-        sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
+        sampler = [rand[i*mini_batch_size:(i+1)*mini_batch_size] for i in range(num_mini_batch)]
 
-        share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[3:])
-        obs = self.obs[:-1].reshape(-1, *self.obs.shape[3:])
+        if self._mixed_obs:
+            share_obs = {}
+            obs = {}
+            for key in self.share_obs.keys():
+                share_obs[key] = self.share_obs[key][:-1].reshape(-1, *self.share_obs[key].shape[3:])
+            for key in self.obs.keys():
+                obs[key] = self.obs[key][:-1].reshape(-1, *self.obs[key].shape[3:])
+        else:
+            share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[3:])
+            obs = self.obs[:-1].reshape(-1, *self.obs.shape[3:])
         rnn_states = self.rnn_states[:-1].reshape(-1, *self.rnn_states.shape[3:])
         rnn_states_critic = self.rnn_states_critic[:-1].reshape(-1, *self.rnn_states_critic.shape[3:])
         actions = self.actions.reshape(-1, self.actions.shape[-1])
@@ -388,8 +389,16 @@ class SharedReplayBuffer(object):
 
         for indices in sampler:
             # obs size [T+1 N M Dim]-->[T N M Dim]-->[T*N*M,Dim]-->[index,Dim]
-            share_obs_batch = share_obs[indices]
-            obs_batch = obs[indices]
+            if self._mixed_obs:
+                share_obs_batch = {}
+                obs_batch = {}
+                for key in share_obs.keys():
+                    share_obs_batch[key] = share_obs[key][indices]
+                for key in obs.keys():
+                    obs_batch[key] = obs[key][indices]
+            else:
+                share_obs_batch = share_obs[indices]
+                obs_batch = obs[indices]
             rnn_states_batch = rnn_states[indices]
             rnn_states_critic_batch = rnn_states_critic[indices]
             actions_batch = actions[indices]
@@ -407,10 +416,7 @@ class SharedReplayBuffer(object):
             else:
                 adv_targ = advantages[indices]
 
-            yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch,\
-                  value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
-                  adv_targ, available_actions_batch
-
+            yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, adv_targ, available_actions_batch
     def naive_recurrent_generator(self, advantages, num_mini_batch):
         """
         Yield training data for non-chunked RNN training.
@@ -509,26 +515,44 @@ class SharedReplayBuffer(object):
                   adv_targ, available_actions_batch
 
     def recurrent_generator(self, advantages, num_mini_batch, data_chunk_length):
-        """
-        Yield training data for chunked RNN training.
-        :param advantages: (np.ndarray) advantage estimates.
-        :param num_mini_batch: (int) number of minibatches to split the batch into.
-        :param data_chunk_length: (int) length of sequence chunks with which to train RNN.
-        """
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
         batch_size = n_rollout_threads * episode_length * num_agents
         data_chunks = batch_size // data_chunk_length  # [C=r*T*M/L]
         mini_batch_size = data_chunks // num_mini_batch
 
-        rand = torch.randperm(data_chunks).numpy()
-        sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
+        assert n_rollout_threads * episode_length * num_agents >= data_chunk_length, (
+            "PPO requires the number of processes ({})* number of agents ({}) * episode length ({}) "
+            "to be greater than or equal to the number of "
+            "data chunk length ({}).".format(n_rollout_threads, num_agents, episode_length ,data_chunk_length))
 
-        if len(self.share_obs.shape) > 4:
-            share_obs = self.share_obs[:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.share_obs.shape[3:])
-            obs = self.obs[:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.obs.shape[3:])
+        rand = torch.randperm(data_chunks).numpy()
+        sampler = [rand[i*mini_batch_size:(i+1)*mini_batch_size] for i in range(num_mini_batch)]
+
+        if self._mixed_obs:
+            share_obs = {}
+            obs = {}
+            for key in self.share_obs.keys():
+                if len(self.share_obs[key].shape) == 6:
+                    share_obs[key] = self.share_obs[key][:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.share_obs[key].shape[3:])
+                elif len(self.share_obs[key].shape) == 5:
+                    share_obs[key] = self.share_obs[key][:-1].transpose(1, 2, 0, 3, 4).reshape(-1, *self.share_obs[key].shape[3:])
+                else:
+                    share_obs[key] = _cast(self.share_obs[key][:-1])
+                   
+            for key in self.obs.keys():
+                if len(self.obs[key].shape) == 6:
+                    obs[key] = self.obs[key][:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.obs[key].shape[3:])
+                elif len(self.obs[key].shape) == 5:
+                    obs[key] = self.obs[key][:-1].transpose(1, 2, 0, 3, 4).reshape(-1, *self.obs[key].shape[3:])
+                else:
+                    obs[key] = _cast(self.obs[key][:-1])
         else:
-            share_obs = _cast(self.share_obs[:-1])
-            obs = _cast(self.obs[:-1])
+            if len(self.share_obs.shape) > 4:
+                share_obs = self.share_obs[:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.share_obs.shape[3:])
+                obs = self.obs[:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.obs.shape[3:])
+            else:
+                share_obs = _cast(self.share_obs[:-1])
+                obs = _cast(self.obs[:-1])
 
         actions = _cast(self.actions)
         action_log_probs = _cast(self.action_log_probs)
@@ -536,20 +560,24 @@ class SharedReplayBuffer(object):
         value_preds = _cast(self.value_preds[:-1])
         returns = _cast(self.returns[:-1])
         masks = _cast(self.masks[:-1])
-        active_masks = _cast(self.active_masks[:-1])
+        active_masks = _cast(self.active_masks[:-1])       
         # rnn_states = _cast(self.rnn_states[:-1])
         # rnn_states_critic = _cast(self.rnn_states_critic[:-1])
         rnn_states = self.rnn_states[:-1].transpose(1, 2, 0, 3, 4).reshape(-1, *self.rnn_states.shape[3:])
-        rnn_states_critic = self.rnn_states_critic[:-1].transpose(1, 2, 0, 3, 4).reshape(-1,
-                                                                                         *self.rnn_states_critic.shape[
-                                                                                          3:])
-
+        rnn_states_critic = self.rnn_states_critic[:-1].transpose(1, 2, 0, 3, 4).reshape(-1, *self.rnn_states_critic.shape[3:])
+        
         if self.available_actions is not None:
             available_actions = _cast(self.available_actions[:-1])
 
         for indices in sampler:
-            share_obs_batch = []
-            obs_batch = []
+
+            if self._mixed_obs:
+                share_obs_batch = defaultdict(list)
+                obs_batch = defaultdict(list)
+            else:
+                share_obs_batch = []
+                obs_batch = []
+
             rnn_states_batch = []
             rnn_states_critic_batch = []
             actions_batch = []
@@ -565,26 +593,39 @@ class SharedReplayBuffer(object):
 
                 ind = index * data_chunk_length
                 # size [T+1 N M Dim]-->[T N M Dim]-->[N,M,T,Dim]-->[N*M*T,Dim]-->[L,Dim]
-                share_obs_batch.append(share_obs[ind:ind + data_chunk_length])
-                obs_batch.append(obs[ind:ind + data_chunk_length])
-                actions_batch.append(actions[ind:ind + data_chunk_length])
+                if self._mixed_obs:
+                    for key in share_obs.keys():
+                        share_obs_batch[key].append(share_obs[key][ind:ind+data_chunk_length])
+                    for key in obs.keys():
+                        obs_batch[key].append(obs[key][ind:ind+data_chunk_length])
+                else:
+                    share_obs_batch.append(share_obs[ind:ind+data_chunk_length])
+                    obs_batch.append(obs[ind:ind+data_chunk_length])
+
+                actions_batch.append(actions[ind:ind+data_chunk_length])
                 if self.available_actions is not None:
-                    available_actions_batch.append(available_actions[ind:ind + data_chunk_length])
-                value_preds_batch.append(value_preds[ind:ind + data_chunk_length])
-                return_batch.append(returns[ind:ind + data_chunk_length])
-                masks_batch.append(masks[ind:ind + data_chunk_length])
-                active_masks_batch.append(active_masks[ind:ind + data_chunk_length])
-                old_action_log_probs_batch.append(action_log_probs[ind:ind + data_chunk_length])
-                adv_targ.append(advantages[ind:ind + data_chunk_length])
+                    available_actions_batch.append(available_actions[ind:ind+data_chunk_length])
+                value_preds_batch.append(value_preds[ind:ind+data_chunk_length])
+                return_batch.append(returns[ind:ind+data_chunk_length])
+                masks_batch.append(masks[ind:ind+data_chunk_length])
+                active_masks_batch.append(active_masks[ind:ind+data_chunk_length])
+                old_action_log_probs_batch.append(action_log_probs[ind:ind+data_chunk_length])
+                adv_targ.append(advantages[ind:ind+data_chunk_length])
                 # size [T+1 N M Dim]-->[T N M Dim]-->[N M T Dim]-->[N*M*T,Dim]-->[1,Dim]
                 rnn_states_batch.append(rnn_states[ind])
                 rnn_states_critic_batch.append(rnn_states_critic[ind])
-
+            
             L, N = data_chunk_length, mini_batch_size
 
-            # These are all from_numpys of size (L, N, Dim)           
-            share_obs_batch = np.stack(share_obs_batch, axis=1)
-            obs_batch = np.stack(obs_batch, axis=1)
+            # These are all from_numpys of size (L, N, Dim) 
+            if self._mixed_obs:
+                for key in share_obs_batch.keys():  
+                    share_obs_batch[key] = np.stack(share_obs_batch[key], axis=1)
+                for key in obs_batch.keys():  
+                    obs_batch[key] = np.stack(obs_batch[key], axis=1)
+            else:        
+                share_obs_batch = np.stack(share_obs_batch, axis=1)
+                obs_batch = np.stack(obs_batch, axis=1)
 
             actions_batch = np.stack(actions_batch, axis=1)
             if self.available_actions is not None:
@@ -599,10 +640,16 @@ class SharedReplayBuffer(object):
             # States is just a (N, -1) from_numpy
             rnn_states_batch = np.stack(rnn_states_batch).reshape(N, *self.rnn_states.shape[3:])
             rnn_states_critic_batch = np.stack(rnn_states_critic_batch).reshape(N, *self.rnn_states_critic.shape[3:])
-
+            
             # Flatten the (L, N, ...) from_numpys to (L * N, ...)
-            share_obs_batch = _flatten(L, N, share_obs_batch)
-            obs_batch = _flatten(L, N, obs_batch)
+            if self._mixed_obs:
+                for key in share_obs_batch.keys(): 
+                    share_obs_batch[key] = _flatten(L, N, share_obs_batch[key])
+                for key in obs_batch.keys(): 
+                    obs_batch[key] = _flatten(L, N, obs_batch[key])
+            else:
+                share_obs_batch = _flatten(L, N, share_obs_batch)
+                obs_batch = _flatten(L, N, obs_batch)
             actions_batch = _flatten(L, N, actions_batch)
             if self.available_actions is not None:
                 available_actions_batch = _flatten(L, N, available_actions_batch)
@@ -615,9 +662,7 @@ class SharedReplayBuffer(object):
             old_action_log_probs_batch = _flatten(L, N, old_action_log_probs_batch)
             adv_targ = _flatten(L, N, adv_targ)
 
-            yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch,\
-                  value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
-                  adv_targ, available_actions_batch
+            yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, adv_targ, available_actions_batch
     
     def recurrent_generator_transformer(self, advantages, num_mini_batch, data_chunk_length):
         """

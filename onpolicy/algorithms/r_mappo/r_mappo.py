@@ -150,10 +150,10 @@ class R_MAPPO():
 
         self.policy.actor_optimizer.zero_grad()
 
-        if update_actor and mode == 'exe':
-            (policy_loss - dist_entropy * self.entropy_coef).backward()
-        elif update_actor and mode == 'ctl':
-            (policy_loss - dist_entropy * 0).backward()
+        (policy_loss - dist_entropy * self.entropy_coef).backward()
+        # if update_actor and mode == 'exe':
+        # elif update_actor and mode == 'ctl':
+        #     (policy_loss - dist_entropy * self.entropy_coef).backward()
 
         if self._use_max_grad_norm:
             actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
@@ -208,11 +208,11 @@ class R_MAPPO():
 
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy and mode =='exe':
-                data_generator = buffer.recurrent_generator_transformer(advantages, self.num_mini_batch, self.data_chunk_length)
+                data_generator = buffer.recurrent_generator(advantages, self.num_mini_batch, self.data_chunk_length)
             elif self._use_naive_recurrent and mode =='exe':
                 data_generator = buffer.naive_recurrent_generator(advantages, self.num_mini_batch)
             else:
-                data_generator = buffer.feed_forward_generator_transformer(advantages, self.num_mini_batch)
+                data_generator = buffer.feed_forward_generator(advantages, self.num_mini_batch)
 
             for sample in data_generator:
 

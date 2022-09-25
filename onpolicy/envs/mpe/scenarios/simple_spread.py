@@ -9,6 +9,7 @@ class Scenario(BaseScenario):
     def make_world(self, args):
         world = World()
         world.use_gnn = args.use_gnn
+        world.use_exe_gnn = args.use_exe_gnn
         world.world_length = args.episode_length
         # set any world properties first
         world.dim_c = 2
@@ -130,10 +131,12 @@ class Scenario(BaseScenario):
         agent_pos = []
         comm = []
         other_pos = []
+        other_gt_pos = []
         rel_pos = np.zeros((world.num_agents, world.num_landmarks, 1))
         goal_id = world.pred_goal_id[agent.id]
         for land_id, entity in enumerate(world.landmarks):  # world.entities:
             if int(goal_id) == int(land_id):
+                target_gt_goal = entity.state.p_pos
                 target_goal = entity.state.p_pos - agent.state.p_pos
             entity_pos.append(entity.state.p_pos - agent.state.p_pos)
             entity_gt_pos.append(entity.state.p_pos)
@@ -145,6 +148,7 @@ class Scenario(BaseScenario):
                         continue
                     comm.append(other.state.c)
                     other_pos.append(other.state.p_pos - agent.state.p_pos)
+                    other_gt_pos.append(other.state.p_pos)
         # entity colors
         entity_color = []
         for entity in world.landmarks:  # world.entities:
@@ -153,7 +157,15 @@ class Scenario(BaseScenario):
         id_vector = np.zeros(len(world.agents))
         id_vector[agent.id] = 1
         if mode == 'exe':
-            return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [target_goal] + other_pos + [id_vector])
+            if world.use_exe_gnn:
+                info = {}
+                info['agent_state'] = np.stack([agent.state.p_vel]+[agent.state.p_pos])
+                info['target_goal'] = np.stack([target_gt_goal])
+                info['other_pos'] = np.stack(other_gt_pos)
+                # info['agent_id'] = np.stack(id_vector)
+                return info
+            else:
+                return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [target_goal] + other_pos + [id_vector])
             #entity_pos + other_pos + [id_vector] + comm)
         elif mode == 'ctl':
             if world.use_gnn:

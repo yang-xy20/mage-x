@@ -227,7 +227,7 @@ class HRunner(object):
                                                          np.concatenate(buffer.obs[-1]),
                                                          np.concatenate(buffer.rnn_states_critic[-1]),
                                                          np.concatenate(buffer.masks[-1]))
-        elif self.use_gnn and mode == 'ctl':
+        elif (self.use_gnn and mode == 'ctl') or (self.use_exe_gnn and mode == 'exe'):
             concat_share_obs = {}
             for key in buffer.share_obs.keys():
                 concat_share_obs[key] = np.concatenate(buffer.share_obs[key][-1])

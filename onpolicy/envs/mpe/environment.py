@@ -17,7 +17,7 @@ class MultiAgentEnv(gym.Env):
     def __init__(self, world, reset_callback=None, reward_callback=None,
                  observation_callback=None, info_callback=None,
                  done_callback=None, post_step_callback=None,
-                 shared_viewer=True, discrete_action=True, use_gnn = False):
+                 shared_viewer=True, discrete_action=True, use_gnn = False, use_exe_gnn = False):
 
         self.world = world
         self.world_length = self.world.world_length
@@ -26,6 +26,7 @@ class MultiAgentEnv(gym.Env):
         # set required vectorized gym env property
         self.n = len(world.policy_agents)
         self.use_gnn = use_gnn
+        self.use_exe_gnn = use_exe_gnn
         # scenario callbacks
         self.reset_callback = reset_callback
         self.reward_callback = reward_callback
@@ -105,13 +106,32 @@ class MultiAgentEnv(gym.Env):
             
             # observation space
             
-            obs_dim = len(observation_callback(agent, self.world, 'exe'))
-            share_obs_dim += obs_dim
-            self.observation_space.append(spaces.Box(
-                low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
-            self.exe_observation_space.append(spaces.Box(
-                low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
+            if not self.use_exe_gnn:
+                obs_dim = len(observation_callback(agent, self.world, 'exe'))
+                share_obs_dim += obs_dim
+                self.observation_space.append(spaces.Box(
+                    low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
+                self.exe_observation_space.append(spaces.Box(
+                    low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))  # [-inf,inf]
+            
             agent.action.c = np.zeros(self.world.dim_c)
+        
+        if self.use_exe_gnn:
+            exe_observation_space = {}
+            exe_observation_space['agent_state'] = gym.spaces.Box(
+                        low=0, high=1, shape=(1, 4), dtype=np.float32)
+            exe_observation_space['other_pos'] = gym.spaces.Box(
+                        low=0, high=1, shape=(self.n-1, 2), dtype=np.float32)
+            exe_observation_space['target_goal'] = gym.spaces.Box(
+                        low=0, high=1, shape=(1, 2), dtype=np.float32)
+            exe_share_observation_space = self.exe_observation_space.copy()
+            exe_observation_space = [gym.spaces.Dict(self.exe_observation_space)]
+            exe_share_observation_space = [gym.spaces.Dict(self.exe_share_observation_space)]  
+            
+            self.observation_space = [spaces.Box(
+                low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32) for _ in range(self.n)]  # [-inf,inf]
+            self.exe_observation_space = [spaces.Box(
+                low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32) for _ in range(self.n)]  # [-inf,inf]
         
         if self.use_gnn:
             self.ctl_observation_space = {}

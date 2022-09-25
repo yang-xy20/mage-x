@@ -7,7 +7,8 @@ from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.popart import PopArt
 from onpolicy.utils.util import get_shape_from_obs_space
-from onpolicy.algorithms.utils.gnn import Perception_Graph, LinearAssignment
+from onpolicy.algorithms.utils.softgnn import Perception_Graph, LinearAssignment
+from onpolicy.algorithms.utils.hardgnn import Topk_Graph
 
 
 class R_Actor(nn.Module):
@@ -34,7 +35,10 @@ class R_Actor(nn.Module):
         obs_shape = get_shape_from_obs_space(obs_space)
         if 'Dict' in obs_shape.__class__.__name__:
             self._mixed_obs = True
-            self.base = Perception_Graph(args.num_agents)
+            if use_macro:
+                self.base = Perception_Graph(args.num_agents)
+            else:
+                self.base = Topk_Graph()
         else:
             self._mixed_obs = False
             base = CNNBase if len(obs_shape) == 3 else MLPBase
@@ -141,14 +145,16 @@ class R_Critic(nn.Module):
         self._recurrent_N = args.recurrent_N
         self._use_popart = args.use_popart
         self.use_macro = use_macro
-        self._use_gnn = args.use_gnn
         self.tpdv = dict(dtype=torch.float32, device=device)
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
 
         cent_obs_shape = get_shape_from_obs_space(cent_obs_space)
         if 'Dict' in cent_obs_shape.__class__.__name__:
             self._mixed_obs = True
-            self.base = Perception_Graph(args.num_agents)
+            if use_macro:
+                self.base = Perception_Graph(args.num_agents)
+            else:
+                self.base = Topk_Graph()
         else:
             self._mixed_obs = False
             base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
