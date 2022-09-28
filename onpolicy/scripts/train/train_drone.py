@@ -56,12 +56,20 @@ def parse_args(args, parser):
                         default=2, help="number of players")
     parser.add_argument('--freq', type=int,
                         default=240, help="number of players")
+    parser.add_argument('--epi_len_sec', type=int,
+                        default=5, help="number of players")
     parser.add_argument('--agg_phy_steps', type=int,
                         default=1, help="number of players")
     parser.add_argument('--n_radius', type=float,
                         default=np.inf, help="number of players")
     parser.add_argument('--controller_num_agents', type=int,
                         default=1, help="number of players")
+    parser.add_argument("--record", action="store_true", 
+                        default=False, 
+                        help="by default False. If True, use_new_policy_loss")
+    parser.add_argument("--obstacles", action="store_true", 
+                        default=False, 
+                        help="by default False. If True, use_new_policy_loss")
     parser.add_argument("--use_new_loss", action="store_true", 
                         default=False, 
                         help="by default False. If True, use_new_policy_loss")
