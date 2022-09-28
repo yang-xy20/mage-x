@@ -2,7 +2,6 @@ import numpy as np
 from onpolicy.envs.mpe.core import World, Agent, Landmark
 from onpolicy.envs.mpe.scenario import BaseScenario
 from scipy.optimize import linear_sum_assignment
-from scipy.optimize import linear_sum_assignment
 
 
 class Scenario(BaseScenario):

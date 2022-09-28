@@ -63,8 +63,6 @@ class MultiAgentEnv(gym.Env):
         self.share_observation_space = []
         self.ctl_share_observation_space = [] 
         self.exe_share_observation_space = [] 
-        self.exe_share_action_space = []
-        self.ctl_share_action_space = []
         share_obs_dim = 0
         ctl_share_obs_dim = 0
         for agent in self.agents:
