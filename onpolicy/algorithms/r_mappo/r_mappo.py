@@ -227,8 +227,10 @@ class R_MAPPO():
                 train_info['{}_actor_grad_norm'.format(mode)] += actor_grad_norm
                 train_info['{}_critic_grad_norm'.format(mode)] += critic_grad_norm
                 train_info['{}_ratio'.format(mode)] += imp_weights.mean()
-
-        num_updates = self.ppo_epoch * self.num_mini_batch
+        if mode =='exe':
+            num_updates = self.ppo_epoch * self.exe_num_mini_batch
+        else mode == 'ctl':
+            num_updates = self.ppo_epoch * self.ctl_num_mini_batch
 
         for k in train_info.keys():
             train_info[k] /= num_updates
