@@ -151,11 +151,10 @@ class R_MAPPO():
         policy_loss = policy_action_loss
 
         self.policy.actor_optimizer.zero_grad()
-
-        (policy_loss - dist_entropy * self.entropy_coef).backward()
-        # if update_actor and mode == 'exe':
-        # elif update_actor and mode == 'ctl':
-        #     (policy_loss - dist_entropy * self.entropy_coef).backward()
+        if update_actor and mode == 'exe':
+            (policy_loss - dist_entropy * self.entropy_coef).backward()
+        elif update_actor and mode == 'ctl':
+            policy_loss.backward()
 
         if self._use_max_grad_norm:
             actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
@@ -229,7 +228,7 @@ class R_MAPPO():
                 train_info['{}_ratio'.format(mode)] += imp_weights.mean()
         if mode =='exe':
             num_updates = self.ppo_epoch * self.exe_num_mini_batch
-        else mode == 'ctl':
+        elif mode == 'ctl':
             num_updates = self.ppo_epoch * self.ctl_num_mini_batch
 
         for k in train_info.keys():
