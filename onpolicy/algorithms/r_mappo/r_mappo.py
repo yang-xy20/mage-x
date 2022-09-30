@@ -24,6 +24,8 @@ class R_MAPPO():
         self.clip_param = args.clip_param
         self.ppo_epoch = args.ppo_epoch
         self.num_mini_batch = args.num_mini_batch
+        self.exe_num_mini_batch = args.exe_num_mini_batch
+        self.ctl_num_mini_batch = args.ctl_num_mini_batch
         self.data_chunk_length = args.data_chunk_length
         self.value_loss_coef = args.value_loss_coef
         self.entropy_coef = args.entropy_coef
@@ -208,11 +210,11 @@ class R_MAPPO():
 
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy and mode =='exe':
-                data_generator = buffer.recurrent_generator(advantages, self.num_mini_batch, self.data_chunk_length)
+                data_generator = buffer.recurrent_generator(advantages, self.exe_num_mini_batch, self.data_chunk_length)
             elif self._use_naive_recurrent and mode =='exe':
-                data_generator = buffer.naive_recurrent_generator(advantages, self.num_mini_batch)
+                data_generator = buffer.naive_recurrent_generator(advantages, self.exe_num_mini_batch)
             else:
-                data_generator = buffer.feed_forward_generator(advantages, self.num_mini_batch)
+                data_generator = buffer.feed_forward_generator(advantages, self.ctl_num_mini_batch)
 
             for sample in data_generator:
 

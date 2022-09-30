@@ -33,9 +33,9 @@ class Topk_Graph(nn.Module):
         self.gat_encoder = GraphConvolutionModule(self.hidden_size, gat_encoder_out_size)
             
         # initialize the gat encoder for the Scheduler
-        self.obs_encoder = nn.Linear(2, self.hidden_size)
+        self.obs_encoder = nn.Linear(2, self.hidden_size)#
 
-        self.land_encoder = nn.Linear(6, self.hidden_size)
+        self.land_encoder = nn.Linear(6, self.hidden_size)#
         self.all_encoder = nn.Sequential(
             nn.Linear(self.hidden_size*2, self.hidden_size//2),
             nn.ReLU(),
@@ -86,7 +86,10 @@ class Topk_Graph(nn.Module):
         return message
         
     def agent_interaction(self, obs):
-        all_state = torch.cat((obs['agent_state'][:,:,:2], obs['other_pos']),dim = 1)
+        if obs['other_pos'].shape[-1] != 2:
+            all_state = torch.cat((obs['agent_state'], obs['other_pos']),dim = 1)
+        else:
+            all_state = torch.cat((obs['agent_state'][:,:,:2], obs['other_pos']),dim = 1)
         encoded_obs = self.obs_encoder(all_state)
         #hidden_state, cell_state = extras
         batch_size = encoded_obs.size()[0]

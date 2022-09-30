@@ -51,6 +51,8 @@ class DroneHRunner(HRunner):
                         self.exe_rnn_states_critic, self.exe_actions_env = self.collect(exe_step, 'exe')
                     exe_step += 1
                     # Obser reward and next obs
+                    # import pdb;pdb.set_trace()
+                    # self.exe_actions_env = []
                     self.envs.step(self.exe_actions_env, 'exe')
                     self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
                     
@@ -78,9 +80,7 @@ class DroneHRunner(HRunner):
                     exe_data = self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos, self.exe_values,\
                                self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, self.exe_rnn_states_critic
                     self.insert(exe_data, self.executor_buffer, self.executor_num_agents,'exe')
-                    print('step_{}'.format(step))
-                    print('exe_done_{}'.format(self.exe_dones))
-
+                
             # compute return and update network
             controller_train_infos = self.learn_update(self.controller_trainer, self.controller_buffer, episode,
                                                        episodes, 'ctl')
@@ -136,9 +136,9 @@ class DroneHRunner(HRunner):
     
     def init_exe_input(self):
         self.exe_input= {}
-        self.exe_input['agent_state'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 4))
-        self.exe_input['target_goal'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 2))
-        self.exe_input['other_pos'] = np.zeros((self.n_rollout_threads, self.num_agents, self.num_agents-1, 2))
+        self.exe_input['agent_state'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 12))
+        self.exe_input['target_goal'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 3))
+        self.exe_input['other_pos'] = np.zeros((self.n_rollout_threads, self.num_agents, self.num_agents-1, 12))
         self.exe_share_input = self.exe_input.copy()
 
     def insert_ctl_data(self, obs):
@@ -152,7 +152,7 @@ class DroneHRunner(HRunner):
         for e in range(self.n_rollout_threads):
             for a in range(self.num_agents):
                 for key in self.exe_input.keys():
-                    self.exe_input[key][e, a] = obs[e, a][key]
+                    self.exe_input[key][e, a] = obs[e][key][a]
         self.exe_share_input = self.exe_input.copy()
             
     def init_buffer(self, buffer, num_agents, obs, mode):
@@ -242,9 +242,11 @@ class DroneHRunner(HRunner):
                     actions_env = np.concatenate((actions_env, uc_actions_env), axis=2)
         elif action_space[0].__class__.__name__ == 'Discrete':
             actions_env = np.squeeze(np.eye(action_space[0].n)[actions], 2)
-        else:
+        elif mode =='ctl':
             action = action.detach().clone()
             action = nn.Sigmoid()(action)
+            actions_env = np.array(np.split(_t2n(action), self.n_rollout_threads))
+        else:
             actions_env = np.array(np.split(_t2n(action), self.n_rollout_threads))
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env

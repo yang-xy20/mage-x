@@ -57,6 +57,10 @@ def parse_args(args, parser):
                         default=2, help="number of players")
     parser.add_argument('--controller_num_agents', type=int,
                         default=1, help="number of players")
+    parser.add_argument('--ctl_num_mini_batch', type=int,
+                        default=10, help="number of players")
+    parser.add_argument('--exe_num_mini_batch', type=int,
+                        default=10, help="number of players")
     parser.add_argument("--use_new_loss", action="store_true", 
                         default=False, 
                         help="by default False. If True, use_new_policy_loss")
@@ -115,7 +119,7 @@ def main(args):
     # wandb
     if all_args.use_wandb:
         run = wandb.init(config=all_args,
-                         project=all_args.env_name,
+                         project='mpe',
                          entity=all_args.wandb_name,
                          notes=socket.gethostname(),
                          name=str(all_args.algorithm_name) + "_" +
