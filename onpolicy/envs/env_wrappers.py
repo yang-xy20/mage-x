@@ -727,7 +727,9 @@ class DummyVecEnv(ShareVecEnv):
             for env in self.envs:
                 env.render(mode=mode)
         else:
-            raise NotImplementedError
+            for env in self.envs:
+                env.render(mode=mode)
+            #raise NotImplementedError
 
 
 

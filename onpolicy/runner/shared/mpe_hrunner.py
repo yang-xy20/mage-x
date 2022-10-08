@@ -52,14 +52,16 @@ class MPEHRunner(HRunner):
                     exe_step += 1
                     # Obser reward and next obs
                     self.envs.step(self.exe_actions_env, 'exe')
-                    self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
+                    _, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
+                    _, self.ctl_rwd, self.ctl_done, self.ctl_info = self.envs.get_data('ctl')#todo:done
+                    self.exe_obs, _, _, _ = self.envs.get_data('exe')
+                    self.ctl_obs, _, _, _ = self.envs.get_data('ctl')#todo:done
                     
                     exe_data = self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos, self.exe_values,\
                                self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, self.exe_rnn_states_critic
                     self.insert(exe_data, self.executor_buffer, self.executor_num_agents,'exe')
                     
                     # get controller datas from updated environment by executor step
-                    self.ctl_obs, self.ctl_rwd, self.ctl_done, self.ctl_info = self.envs.get_data('ctl')#todo:done
                     # insert data into controller buffer
                     ctl_data = self.ctl_obs, self.ctl_rwd, self.ctl_done, self.ctl_info, self.ctl_values, \
                                self.ctl_acts, self.ctl_act_log_probs, self.ctl_rnn_states, self.ctl_rnn_states_critic

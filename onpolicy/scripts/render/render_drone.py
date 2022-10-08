@@ -13,7 +13,7 @@ from onpolicy.envs.env_wrappers import SubprocVecEnv, DummyVecEnv
 
 """Train script for drones."""
 
-def make_train_env(all_args):
+def make_render_env(all_args):
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "Drone":
@@ -142,7 +142,7 @@ def main(args):
                          "_seed" + str(all_args.seed),
                          group=all_args.scenario_name,
                          dir=str(run_dir),
-                         job_type="training",
+                         job_type="evaluation",
                          reinit=True)
     else:
         if not run_dir.exists():
@@ -166,8 +166,8 @@ def main(args):
     np.random.seed(all_args.seed)
 
     # env init
-    envs = make_train_env(all_args)
-    eval_envs = make_eval_env(all_args) if all_args.use_eval else None
+    envs = make_render_env(all_args)
+    eval_envs = None
     num_agents = all_args.num_agents
 
     config = {
@@ -189,7 +189,7 @@ def main(args):
         from onpolicy.runner.separated.drone_runner import DroneRunner as Runner
 
     runner = Runner(config)
-    runner.run()
+    runner.render()
     
     # post process
     envs.close()

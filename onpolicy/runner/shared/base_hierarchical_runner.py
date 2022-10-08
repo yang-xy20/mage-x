@@ -274,6 +274,7 @@ class HRunner(object):
         #                str(self.save_dir) + "/executor_{}.pt".format(model_name))
 
     def restore(self):
+        print('11')
         controller_models = self.controller_trainer.policy
         executor_models = self.executor_trainer.policy
         policy_actor_state_dict = torch.load(str(self.model_dir) + '/ctl_actor.pt')

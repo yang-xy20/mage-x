@@ -22,7 +22,7 @@ class DroneHRunner(HRunner):
 
     def run(self):
         self.envs.reset() 
-        ctl_obs, ctl_rwd, ctl_done, ctl_info = self.envs.get_data("ctl")
+        ctl_obs, ctl_rwd, self.ctl_done, ctl_info = self.envs.get_data("ctl")
         self.init_buffer(self.controller_buffer, self.controller_num_agents, ctl_obs, 'ctl')
         self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
         self.init_buffer(self.executor_buffer, self.executor_num_agents, self.exe_obs, 'exe')
@@ -51,18 +51,19 @@ class DroneHRunner(HRunner):
                         self.exe_rnn_states_critic, self.exe_actions_env = self.collect(exe_step, 'exe')
                     exe_step += 1
                     # Obser reward and next obs
-                    # import pdb;pdb.set_trace()
                     # self.exe_actions_env = []
                     self.envs.step(self.exe_actions_env, 'exe')
-                    self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
-                    
+                    _, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
+                    _, self.ctl_rwd, self.ctl_done, self.ctl_info = self.envs.get_data('ctl')#todo:done
+                    self.exe_obs, _, _, _ = self.envs.get_data('exe')
+                    self.ctl_obs, _, _, _ = self.envs.get_data('ctl')#todo:done
+        
+                    # insert data into controller buffer
+                    # get controller datas from updated environment by executor step
                     exe_data = self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos, self.exe_values,\
                                self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, self.exe_rnn_states_critic
                     self.insert(exe_data, self.executor_buffer, self.executor_num_agents,'exe')
-                    
-                    # get controller datas from updated environment by executor step
-                    self.ctl_obs, self.ctl_rwd, self.ctl_done, self.ctl_info = self.envs.get_data('ctl')#todo:done
-                    # insert data into controller buffer
+
                     ctl_data = self.ctl_obs, self.ctl_rwd, self.ctl_done, self.ctl_info, self.ctl_values, \
                                self.ctl_acts, self.ctl_act_log_probs, self.ctl_rnn_states, self.ctl_rnn_states_critic
                     # insert data into buffer
@@ -74,6 +75,7 @@ class DroneHRunner(HRunner):
                     exe_step += 1
                     # execute executor step
                     self.envs.step(self.exe_actions_env, 'exe')
+                    #import pdb;pdb.set_trace()
 
                     self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
                     
@@ -108,17 +110,24 @@ class DroneHRunner(HRunner):
 
                 if self.env_name == "Drone":
                     env_infos = {}
-                    idv_rews = []
                     suc = []
+                    collision = []
                     for info in self.exe_infos:
                         if "success_rate" in info.keys():
                             suc.append(info['success_rate'])
+                        if "collision_rate" in info.keys():
+                            collision.append(info['collision_rate'])
                     env_infos["success_rate"] = suc
+                    env_infos["collision_rate"] = collision
 
                 controller_train_infos["average_episode_controller_rewards"] = np.mean(self.controller_buffer.rewards) * (self.episode_length//self.step_difference)
                 executor_train_infos["average_episode_executor_rewards"] = np.mean(self.executor_buffer.rewards) * self.episode_length
                 print("controller average episode rewards is {}".format(controller_train_infos["average_episode_controller_rewards"]))
                 print("executor average episode rewards is {}".format(executor_train_infos["average_episode_executor_rewards"]))
+                print("success rate is {}".format(np.mean(np.array(suc))))
+                print("collision rate is {}".format(np.mean(np.array(collision))))
+                
+                #import pdb;pdb.set_trace()
                 self.log_train(controller_train_infos, total_num_steps)
                 self.log_train(executor_train_infos, total_num_steps)
                 self.log_env(env_infos, total_num_steps)
@@ -136,9 +145,9 @@ class DroneHRunner(HRunner):
     
     def init_exe_input(self):
         self.exe_input= {}
-        self.exe_input['agent_state'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 12))
-        self.exe_input['target_goal'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 3))
-        self.exe_input['other_pos'] = np.zeros((self.n_rollout_threads, self.num_agents, self.num_agents-1, 12))
+        self.exe_input['agent_state'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 4))
+        self.exe_input['target_goal'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 2))
+        self.exe_input['other_pos'] = np.zeros((self.n_rollout_threads, self.num_agents, self.num_agents-1, 4))
         self.exe_share_input = self.exe_input.copy()
 
     def insert_ctl_data(self, obs):
@@ -233,16 +242,7 @@ class DroneHRunner(HRunner):
         rnn_states = np.array(np.split(_t2n(rnn_states), self.n_rollout_threads))
         rnn_states_critic = np.array(np.split(_t2n(rnn_states_critic), self.n_rollout_threads))
         # rearrange action
-        if action_space[0].__class__.__name__ == 'MultiDiscrete':
-            for i in range(action_space[0].shape):
-                uc_actions_env = np.eye(action_space[0].high[i] + 1)[actions[:, :, i]]
-                if i == 0:
-                    actions_env = uc_actions_env
-                else:
-                    actions_env = np.concatenate((actions_env, uc_actions_env), axis=2)
-        elif action_space[0].__class__.__name__ == 'Discrete':
-            actions_env = np.squeeze(np.eye(action_space[0].n)[actions], 2)
-        elif mode =='ctl':
+        if mode =='ctl':
             action = action.detach().clone()
             action = nn.Sigmoid()(action)
             actions_env = np.array(np.split(_t2n(action), self.n_rollout_threads))
@@ -275,7 +275,7 @@ class DroneHRunner(HRunner):
 
         buffer.insert(share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs, values, rewards, masks)
 
-    def eval_act(self, trainer, obs, rnn_states, masks):
+    def eval_act(self, trainer, obs, rnn_states, masks, mode):
         trainer.prep_rollout()
         action, rnn_states = trainer.policy.act(np.concatenate(obs),
                                             np.concatenate(rnn_states),
@@ -284,19 +284,26 @@ class DroneHRunner(HRunner):
         actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
         rnn_states = np.array(np.split(_t2n(rnn_states), self.n_rollout_threads))
 
-        if envs.action_space[0].__class__.__name__ == 'MultiDiscrete':
-            for i in range(envs.action_space[0].shape):
-                uc_actions_env = np.eye(envs.action_space[0].high[i]+1)[actions[:, :, i]]
-                if i == 0:
-                    actions_env = uc_actions_env
-                else:
-                    actions_env = np.concatenate((actions_env, uc_actions_env), axis=2)
-        elif envs.action_space[0].__class__.__name__ == 'Discrete':
-            actions_env = np.squeeze(np.eye(envs.action_space[0].n)[actions], 2)
-        else:
+        if mode =='ctl':
             action = action.detach().clone()
             action = nn.Sigmoid()(action)
             actions_env = np.array(np.split(_t2n(action), self.n_rollout_threads))
+        else:
+            actions_env = np.array(np.split(_t2n(action), self.n_rollout_threads))
+
+        # if envs.action_space[0].__class__.__name__ == 'MultiDiscrete':
+        #     for i in range(envs.action_space[0].shape):
+        #         uc_actions_env = np.eye(envs.action_space[0].high[i]+1)[actions[:, :, i]]
+        #         if i == 0:
+        #             actions_env = uc_actions_env
+        #         else:
+        #             actions_env = np.concatenate((actions_env, uc_actions_env), axis=2)
+        # elif envs.action_space[0].__class__.__name__ == 'Discrete':
+        #     actions_env = np.squeeze(np.eye(envs.action_space[0].n)[actions], 2)
+        # else:
+        #     action = action.detach().clone()
+        #     action = nn.Sigmoid()(action)
+        #     actions_env = np.array(np.split(_t2n(action), self.n_rollout_threads))
         
         
         return action, actions_env, rnn_states
@@ -357,29 +364,34 @@ class DroneHRunner(HRunner):
                 image = envs.render('rgb_array')[0][0]
                 all_frames.append(image)
             else:
-                envs.render('human')
+                envs.render('mini_map')
 
             ctl_rnn_states = np.zeros((self.n_rollout_threads, self.controller_num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
             ctl_masks = np.ones((self.n_rollout_threads, self.controller_num_agents, 1), dtype=np.float32)
             exe_rnn_states = np.zeros((self.n_rollout_threads, self.executor_num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
             exe_masks = np.ones((self.n_rollout_threads, self.executor_num_agents, 1), dtype=np.float32)
             
-            episode_rewards = []
+            exe_episode_rewards = []
             
             for step in range(self.episode_length):
                 calc_start = time.time()
                 if step % (self.step_difference + 1) == 0:
+                    print(1)
                     ctl_obs, ctl_rwds, ctl_dones, ctl_infos = envs.get_data('ctl')
-                    action, actions_env, ctl_rnn_states = self.eval_act(self.controller_trainer, ctl_obs, ctl_rnn_states, ctl_masks)
+                    action, actions_env, ctl_rnn_states = self.eval_act(self.controller_trainer, ctl_obs, ctl_rnn_states, ctl_masks, 'ctl')
                     envs.step(actions_env,'ctl')
+                    ctl_obs, ctl_rwds, ctl_dones, ctl_infos = envs.get_data('ctl')
                     ctl_rnn_states[ctl_dones == True] = np.zeros(((ctl_dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
                     ctl_masks = np.ones((self.n_rollout_threads, self.controller_num_agents, 1), dtype=np.float32)
                 else:
+                    print(step)
                     exe_obs, exe_rwds, exe_dones, exe_infos = envs.get_data('exe')
-                    action, actions_env, exe_rnn_states = self.eval_act(self.executor_trainer, exe_obs, exe_rnn_states, exe_masks)
+                    action, actions_env, exe_rnn_states = self.eval_act(self.executor_trainer, exe_obs, exe_rnn_states, exe_masks, 'exe')
                     envs.step(actions_env,'exe')
+                    exe_obs, exe_rwds, exe_dones, exe_infos = envs.get_data('exe')
+                    print(exe_dones)
                     exe_rnn_states[exe_dones == True] = np.zeros(((exe_dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
-                    exe_masks = np.ones((self.n_rollout_threads, self.executor_um_agents, 1), dtype=np.float32)
+                    exe_masks = np.ones((self.n_rollout_threads, self.executor_num_agents, 1), dtype=np.float32)
                     exe_episode_rewards.append(exe_rwds)
                 # Obser reward and next obs
                 
@@ -391,7 +403,7 @@ class DroneHRunner(HRunner):
                     if elapsed < self.all_args.ifi:
                         time.sleep(self.all_args.ifi - elapsed)
                 else:
-                    envs.render('human')
+                    envs.render('mini_map')
 
             print("average exe episode rewards is: " + str(np.mean(np.sum(np.array(exe_episode_rewards), axis=0))))
 
