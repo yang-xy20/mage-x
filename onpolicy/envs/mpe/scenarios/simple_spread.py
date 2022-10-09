@@ -7,6 +7,7 @@ from scipy.optimize import linear_sum_assignment
 class Scenario(BaseScenario):
     def make_world(self, args):
         world = World()
+        world.name = 'spread'
         world.use_gnn = args.use_gnn
         world.use_exe_gnn = args.use_exe_gnn
         world.world_length = args.episode_length

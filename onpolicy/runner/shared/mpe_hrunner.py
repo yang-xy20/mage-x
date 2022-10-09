@@ -116,6 +116,7 @@ class MPEHRunner(HRunner):
                                 idv_rews.append(info[agent_id]['individual_reward'])
                             if agent_id == 0 and "success_rate" in info[agent_id].keys():
                                 suc.append(info[agent_id]['success_rate'])
+                                cover_rate
                         agent_k = 'agent%i/individual_rewards' % agent_id
                         env_infos[agent_k] = idv_rews
                         if agent_id == 0:
@@ -143,7 +144,7 @@ class MPEHRunner(HRunner):
     def init_exe_input(self):
         self.exe_input= {}
         self.exe_input['agent_state'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 4))
-        self.exe_input['target_goal'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 2))
+        self.exe_input['target_goal'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 4))
         self.exe_input['other_pos'] = np.zeros((self.n_rollout_threads, self.num_agents, self.num_agents-1, 2))
         self.exe_share_input = self.exe_input.copy()
 

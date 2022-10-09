@@ -209,7 +209,8 @@ class World(object):
         self.world_step += 1
         # set actions for scripted agents
         for agent in self.scripted_agents:
-            agent.action = agent.action_callback(agent, self)
+            agent.action.c = agent.action_callback(agent, self)
+            agent.action.u = agent.action_callback(agent, self)
         # gather forces applied to entities
         p_force = [None] * len(self.entities)
         # apply agent physical controls

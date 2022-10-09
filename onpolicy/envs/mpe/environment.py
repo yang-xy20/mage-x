@@ -99,9 +99,10 @@ class MultiAgentEnv(gym.Env):
             else:
                 self.action_space.append(total_action_space[0])
                 self.exe_action_space.append(total_action_space[0])
-        
-            self.ctl_action_space.append(spaces.Box(low=0.0, high=1.0, shape=(self.n,), dtype=np.float32))
-            
+            if self.world.name == "spread":
+                self.ctl_action_space.append(spaces.Box(low=0.0, high=1.0, shape=(self.n,), dtype=np.float32))
+            elif self.world.name == "ball":
+                self.ctl_action_space.append(spaces.Box(low=0.0, high=1.0, shape=(2*self.n,), dtype=np.float32))
             # observation space
             
             if not self.use_exe_gnn:
@@ -120,8 +121,12 @@ class MultiAgentEnv(gym.Env):
                         low=0, high=1, shape=(1, 4), dtype=np.float32)
             exe_observation_space['other_pos'] = gym.spaces.Box(
                         low=0, high=1, shape=(self.n-1, 2), dtype=np.float32)
-            exe_observation_space['target_goal'] = gym.spaces.Box(
-                        low=0, high=1, shape=(1, 2), dtype=np.float32)
+            if self.world.name == "spread":
+                exe_observation_space['target_goal'] = gym.spaces.Box(
+                            low=0, high=1, shape=(1, 2), dtype=np.float32)
+            elif self.world.name == 'ball':
+                exe_observation_space['target_goal'] = gym.spaces.Box(
+                            low=0, high=1, shape=(1, 4), dtype=np.float32)
             exe_share_observation_space = exe_observation_space.copy()
             self.exe_observation_space = [gym.spaces.Dict(exe_observation_space) for _ in range(self.n)]
             self.exe_share_observation_space = [gym.spaces.Dict(exe_share_observation_space) for _ in range(self.n)]
@@ -185,8 +190,12 @@ class MultiAgentEnv(gym.Env):
         elif mode == 'ctl':
             assert self.me_reset
             self.me_reset = False
-            self.world.pred_goal_id = np.argsort(action_n)[0]
-
+            if self.world.name == 'spread':
+                self.world.pred_goal_id = np.argsort(action_n)[0]
+            elif self.world.name == 'ball':
+                self.world.pred_box_id = np.argsort(action_n[0,:self.n])
+                self.world.pred_land_id = np.argsort(action_n[0,self.n:])
+           
     def get_data(self, mode):
         obs_n = []
         reward_n = []
