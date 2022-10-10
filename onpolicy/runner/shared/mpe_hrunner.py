@@ -116,7 +116,6 @@ class MPEHRunner(HRunner):
                                 idv_rews.append(info[agent_id]['individual_reward'])
                             if agent_id == 0 and "success_rate" in info[agent_id].keys():
                                 suc.append(info[agent_id]['success_rate'])
-                                cover_rate
                         agent_k = 'agent%i/individual_rewards' % agent_id
                         env_infos[agent_k] = idv_rews
                         if agent_id == 0:
