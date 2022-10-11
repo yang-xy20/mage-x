@@ -139,11 +139,11 @@ class Scenario(BaseScenario):
                 target_gt_goal = entity.state.p_pos
                 target_goal = entity.state.p_pos - agent.state.p_pos
             entity_pos.append(entity.state.p_pos - agent.state.p_pos)
-            entity_gt_pos.append(entity.state.p_pos)
+            entity_gt_pos.append(entity.state.p_pos/3.0)
             for agent_id, other in enumerate(world.agents):
-                rel_pos[agent_id, land_id] = np.sqrt(np.sum(np.square(entity.state.p_pos - other.state.p_pos)))
+                rel_pos[agent_id, land_id] = np.sqrt(np.sum(np.square(entity.state.p_pos/3.0 - other.state.p_pos/3.0)))
                 if int(goal_id) == int(land_id):
-                    agent_pos.append(other.state.p_pos)
+                    agent_pos.append(other.state.p_pos/3.0)
                     if other is agent:
                         continue
                     comm.append(other.state.c)
@@ -190,7 +190,7 @@ class Scenario(BaseScenario):
         for a in world.agents:
             goal_id = col_ind[a.id]
             target_goal = world.landmarks[goal_id]
-            dists += np.sqrt(np.sum(np.square(a.state.p_pos - target_goal.state.p_pos)))
+            dists += np.sqrt(np.sum(np.square(a.state.p_pos/3.0 - target_goal.state.p_pos/3.0)))
         
         return col_ind, dists
 
