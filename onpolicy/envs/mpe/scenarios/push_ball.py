@@ -145,8 +145,8 @@ class Scenario(BaseScenario):
             dists_ab = np.sqrt(np.sum(np.square(agent.state.p_pos - target_box.state.p_pos)))
             dists_bl = np.sqrt(np.sum(np.square(target_box.state.p_pos - target_goal.state.p_pos)))
             rew -= (dists_ab + dists_bl)
-            if dists_ab <= world.agents[0].size + world.landmarks[0].size:
-                rew += 0.5
+            # if dists_ab <= world.agents[0].size + world.landmarks[0].size:
+            #     rew += 0.5
             if dists_bl <= 2*world.landmarks[0].size:
                 rew += 1
 
