@@ -35,7 +35,7 @@ class Topk_Graph(nn.Module):
         # initialize the gat encoder for the Scheduler
         self.obs_encoder = nn.Linear(2, self.hidden_size)#
 
-        self.land_encoder = nn.Linear(8, self.hidden_size)#
+        self.land_encoder = nn.Linear(6, self.hidden_size)#
         self.all_encoder = nn.Sequential(
             nn.Linear(self.hidden_size*2, self.hidden_size//2),
             nn.ReLU(),

@@ -143,7 +143,7 @@ class MPEHRunner(HRunner):
     def init_exe_input(self):
         self.exe_input= {}
         self.exe_input['agent_state'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 4))
-        self.exe_input['target_goal'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 4))
+        self.exe_input['target_goal'] = np.zeros((self.n_rollout_threads, self.num_agents, 1, 2))
         self.exe_input['other_pos'] = np.zeros((self.n_rollout_threads, self.num_agents, self.num_agents-1, 2))
         self.exe_share_input = self.exe_input.copy()
 
