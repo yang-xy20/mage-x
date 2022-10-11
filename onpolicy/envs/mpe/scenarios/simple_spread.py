@@ -175,7 +175,7 @@ class Scenario(BaseScenario):
                 info['rel_dis'] = rel_pos
                 return info
             else:
-                return np.concatenate(agent_pos + entity_gt_pos)
+                return np.concatenate(agent_pos + entity_gt_pos)/3.0
 
     def compute_macro_allocation(self, world):
         cost = np.zeros((len(world.agents), len(world.landmarks)))
