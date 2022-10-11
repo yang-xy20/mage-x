@@ -49,7 +49,7 @@ class Scenario(BaseScenario):
             agent.state.p_pos = np.random.uniform(-3, +3, world.dim_p)
             agent.state.p_vel = np.zeros(world.dim_p)
             agent.state.c = np.zeros(world.dim_c)
-            self.prev_agent_state.append(agent.state.p_pos)
+            self.prev_agent_state.append(agent.state.p_pos.copy())
         for i, landmark in enumerate(world.landmarks):
             landmark.state.p_pos = 0.8 * np.random.uniform(-3, +3, world.dim_p)
             landmark.state.p_vel = np.zeros(world.dim_p)
@@ -107,9 +107,9 @@ class Scenario(BaseScenario):
                     target_goal = world.landmarks[int(goal_id)]
                     dists += np.sqrt(np.sum(np.square(self.prev_agent_state[a.id] - target_goal.state.p_pos)))
                 rew = -(dists - self.gt_dists)
-                self.prev_agent_state = []
-                for a in world.agents:
-                    self.prev_agent_state.append(a.state.p_pos)
+                # self.prev_agent_state = []
+                # for a in world.agents:
+                #     self.prev_agent_state.append(a.state.p_pos.copy())
                 # for l in world.landmarks:
                 #     dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos)))
                 #             for a in world.agents]
