@@ -1,6 +1,6 @@
 #!/bin/sh
 env="MPE"
-scenario="simple_spread"  # simple_speaker_listener # simple_reference
+scenario="push_ball"  # simple_speaker_listener # simple_reference
 num_landmarks=50
 num_agents=50
 algo="rmappo"
