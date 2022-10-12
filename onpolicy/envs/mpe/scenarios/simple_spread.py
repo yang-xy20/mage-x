@@ -11,6 +11,9 @@ class Scenario(BaseScenario):
         world.use_gnn = args.use_gnn
         world.use_exe_gnn = args.use_exe_gnn
         world.world_length = args.episode_length
+        world.use_rel_pos = args.use_rel_pos
+        world.use_normalized = args.use_normalized
+        #world.use_mapping = args.use_mapping
         # set any world properties first
         world.dim_c = 2
         world.num_agents = args.num_agents
@@ -30,7 +33,6 @@ class Scenario(BaseScenario):
         for i, landmark in enumerate(world.landmarks):
             landmark.name = 'landmark %d' % i
             landmark.id = i
-            landmark.id = i
             landmark.collide = False
             landmark.movable = False
         # make initial conditions
@@ -45,16 +47,45 @@ class Scenario(BaseScenario):
 
         # set random initial states
         self.prev_agent_state = []
+        agent_pos_x = np.zeros((world.num_agents,1))
+        agent_pos_y = np.zeros((world.num_agents,1))
+        land_pos_x = np.zeros((world.num_agents,1))
+        land_pos_y = np.zeros((world.num_agents,1))
         for agent in world.agents:
-            agent.state.p_pos = np.random.uniform(-3, +3, world.dim_p)
+            agent.state.p_pos = np.random.uniform(-4, +4, world.dim_p)
+            agent_pos_x[agent.id] = agent.state.p_pos[0]
+            agent_pos_y[agent.id] = agent.state.p_pos[1]
             agent.state.p_vel = np.zeros(world.dim_p)
             agent.state.c = np.zeros(world.dim_c)
             self.prev_agent_state.append(agent.state.p_pos.copy())
         for i, landmark in enumerate(world.landmarks):
-            landmark.state.p_pos = 0.8 * np.random.uniform(-3, +3, world.dim_p)
+            landmark.state.p_pos = 0.8 * np.random.uniform(-4, +4, world.dim_p)
             landmark.state.p_vel = np.zeros(world.dim_p)
+            land_pos_x[i] = landmark.state.p_pos[0]
+            land_pos_y[i] = landmark.state.p_pos[1]
+        
+        self.goal_id, self.max_distance, self.gt_dists = self.compute_macro_allocation(world)
+        
+        if world.use_rel_pos:   
+            dis = np.sqrt(np.sum(np.square(world.landmarks[0].state.p_pos)))
+            cos_ang = land_pos_x[0]/dis
+            sin_ang = -land_pos_y[0]/dis
+            self.rel_agent_pos_x = (cos_ang*agent_pos_x - sin_ang*agent_pos_y)/dis
+            self.rel_agent_pos_y = (cos_ang*agent_pos_y + sin_ang*agent_pos_x)/dis
+            self.rel_land_pos_x = (cos_ang*land_pos_x - sin_ang*land_pos_y)/dis
+            self.rel_land_pos_y = (cos_ang*land_pos_y + sin_ang*land_pos_x)/dis
+        elif world.use_normalized:
+            self.agent_pos_x = (agent_pos_x-agent_pos_x[0])/ self.max_distance
+            self.agent_pos_y = (agent_pos_y-agent_pos_y[0])/ self.max_distance
+            self.land_pos_x = (land_pos_x-agent_pos_x[0])/ self.max_distance
+            self.land_pos_y = (land_pos_y-agent_pos_y[0])/ self.max_distance
+        elif world.use_mapping:
 
-        self.goal_id, self.gt_dists = self.compute_macro_allocation(world)
+            self.agent_pos_x = (agent_pos_x-agent_pos_x[0])/ self.max_distance
+            self.agent_pos_y = (agent_pos_y-agent_pos_y[0])/ self.max_distance
+            self.land_pos_x = (land_pos_x-agent_pos_x[0])/ self.max_distance
+            self.land_pos_y = (land_pos_y-agent_pos_y[0])/ self.max_distance
+
         
     def benchmark_data(self, agent, world):
         rew = 0
@@ -106,7 +137,7 @@ class Scenario(BaseScenario):
                     goal_id = world.pred_goal_id[a.id]
                     target_goal = world.landmarks[int(goal_id)]
                     dists += np.sqrt(np.sum(np.square(self.prev_agent_state[a.id] - target_goal.state.p_pos)))
-                rew = -(dists - self.gt_dists)
+                rew = - (dists - self.gt_dists)
                 # self.prev_agent_state = []
                 # for a in world.agents:
                 #     self.prev_agent_state.append(a.state.p_pos.copy())
@@ -139,11 +170,11 @@ class Scenario(BaseScenario):
                 target_gt_goal = entity.state.p_pos
                 target_goal = entity.state.p_pos - agent.state.p_pos
             entity_pos.append(entity.state.p_pos - agent.state.p_pos)
-            entity_gt_pos.append(entity.state.p_pos/3.0)
+            entity_gt_pos.append(entity.state.p_pos)
             for agent_id, other in enumerate(world.agents):
-                rel_pos[agent_id, land_id] = np.sqrt(np.sum(np.square(entity.state.p_pos/3.0 - other.state.p_pos/3.0)))
+                rel_pos[agent_id, land_id] = np.sqrt(np.sum(np.square(entity.state.p_pos - other.state.p_pos)))
                 if int(goal_id) == int(land_id):
-                    agent_pos.append(other.state.p_pos/3.0)
+                    agent_pos.append(other.state.p_pos)
                     if other is agent:
                         continue
                     comm.append(other.state.c)
@@ -174,25 +205,44 @@ class Scenario(BaseScenario):
                 info['land_pos'] = np.stack(entity_gt_pos)
                 info['rel_dis'] = rel_pos
                 return info
+            elif world.use_rel_pos:
+                rel_agent_pos = np.concatenate((self.rel_agent_pos_x,self.rel_agent_pos_y),axis = -1)
+                rel_land_pos = np.concatenate((self.rel_land_pos_x,self.rel_land_pos_y),axis = -1)
+                return np.concatenate((rel_agent_pos, rel_land_pos)).reshape(-1)
+            elif world.use_normalized:
+                gt_agent_pos = np.concatenate((self.agent_pos_x, self.agent_pos_y), axis = -1)
+                gt_land_pos = np.concatenate((self.land_pos_x, self.land_pos_y), axis = -1)
+                return np.concatenate((gt_agent_pos, gt_land_pos)).reshape(-1)
             else:
-                return np.concatenate(agent_pos + entity_gt_pos)/3.0
+                return np.concatenate(agent_pos + entity_gt_pos)
 
     def compute_macro_allocation(self, world):
         cost = np.zeros((len(world.agents), len(world.landmarks)))
+        all_distance = []
         for agent_id, agent in enumerate(world.agents):
+            for other_agent_id, other_agent in enumerate(world.agents):
+                rel_dis = np.sqrt(np.sum(np.square(other_agent.state.p_pos - agent.state.p_pos)))
+                all_distance.append(rel_dis)
+
             for landmark_id, entity in enumerate(world.landmarks):  # world.entities:
                 rel_dis = np.sqrt(np.sum(np.square(entity.state.p_pos - agent.state.p_pos)))
                 cost[agent_id, landmark_id] = rel_dis
+                all_distance.append(rel_dis)
+                if agent_id == 0:
+                    for landmark_id, other_entity in enumerate(world.landmarks):  # world.entities:
+                        rel_dis = np.sqrt(np.sum(np.square(other_entity.state.p_pos - entity.state.p_pos)))
+                        all_distance.append(rel_dis)
             
         row_ind, col_ind = linear_sum_assignment(cost)
-        
+
+        max_distance = np.array(all_distance).max()
         dists = 0
         for a in world.agents:
             goal_id = col_ind[a.id]
             target_goal = world.landmarks[goal_id]
-            dists += np.sqrt(np.sum(np.square(a.state.p_pos/3.0 - target_goal.state.p_pos/3.0)))
-        
-        return col_ind, dists
+            dists += np.sqrt(np.sum(np.square(a.state.p_pos - target_goal.state.p_pos)))
+        return col_ind, max_distance, dists
+
 
     def info(self, world):
         info = {}

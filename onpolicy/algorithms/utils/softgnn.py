@@ -206,10 +206,10 @@ class AttentionalGNN(nn.Module):
         # weights1: n_agent x n_frontier
         # fidx: n_agent x n_frontier x 2
         # assert (~invalid).any(1).all()
-        #scores = score1
-        #scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1]
+        # scores = score1
+        # scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1]
 
-        return desc0
+        return desc0#,score1
         
 
 class Perception_Graph(torch.nn.Module):

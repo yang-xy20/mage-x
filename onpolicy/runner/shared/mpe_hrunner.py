@@ -82,9 +82,9 @@ class MPEHRunner(HRunner):
                     self.insert(exe_data, self.executor_buffer, self.executor_num_agents,'exe')
 
             # compute return and update network
-            controller_train_infos = self.learn_update(self.controller_trainer, self.controller_buffer, episode,
-                                                       episodes, 'ctl')
-            executor_train_infos = self.learn_update(self.executor_trainer, self.executor_buffer, episode, episodes, 'exe')
+            controller_train_infos = self.learn_update(self.controller_trainer, self.controller_buffer, 'ctl')
+            executor_train_infos = self.learn_update(self.executor_trainer, self.executor_buffer, 'exe')
+            
             
             # post process
             total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
@@ -120,7 +120,7 @@ class MPEHRunner(HRunner):
                         env_infos[agent_k] = idv_rews
                         if agent_id == 0:
                             env_infos["success_rate"] = suc
-
+                
                 controller_train_infos["average_episode_controller_rewards"] = np.mean(self.controller_buffer.rewards) * (self.episode_length//self.step_difference)
                 executor_train_infos["average_episode_executor_rewards"] = np.mean(self.executor_buffer.rewards) * self.episode_length
                 print("controller average episode rewards is {}".format(controller_train_infos["average_episode_controller_rewards"]))
@@ -183,7 +183,7 @@ class MPEHRunner(HRunner):
             buffer.share_obs[0] = share_obs.copy()
             buffer.obs[0] = obs.copy()
     
-    def learn_update(self, trainer, buffer, episode, episodes, mode):
+    def learn_update(self, trainer, buffer, mode):
         # compute return and update network
         self.compute(trainer, buffer, mode)
         train_infos = self.train(trainer, buffer, mode)
