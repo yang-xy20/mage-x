@@ -52,19 +52,19 @@ class Scenario(BaseScenario):
         land_pos_x = np.zeros((world.num_agents,1))
         land_pos_y = np.zeros((world.num_agents,1))
         for agent in world.agents:
-            agent.state.p_pos = np.random.uniform(-4, +4, world.dim_p)
+            agent.state.p_pos = np.random.uniform(-3, +3, world.dim_p)
             agent_pos_x[agent.id] = agent.state.p_pos[0]
             agent_pos_y[agent.id] = agent.state.p_pos[1]
             agent.state.p_vel = np.zeros(world.dim_p)
             agent.state.c = np.zeros(world.dim_c)
             self.prev_agent_state.append(agent.state.p_pos.copy())
         for i, landmark in enumerate(world.landmarks):
-            landmark.state.p_pos = 0.8 * np.random.uniform(-4, +4, world.dim_p)
+            landmark.state.p_pos = 0.8 * np.random.uniform(-3, +3, world.dim_p)
             landmark.state.p_vel = np.zeros(world.dim_p)
             land_pos_x[i] = landmark.state.p_pos[0]
             land_pos_y[i] = landmark.state.p_pos[1]
         
-        self.goal_id, self.max_distance, self.gt_dists = self.compute_macro_allocation(world)
+        self.goal_id, self.max_distance, self.al_max_dis, self.gt_dists = self.compute_macro_allocation(world)
         
         if world.use_rel_pos:   
             dis = np.sqrt(np.sum(np.square(world.landmarks[0].state.p_pos)))
@@ -75,12 +75,6 @@ class Scenario(BaseScenario):
             self.rel_land_pos_x = (cos_ang*land_pos_x - sin_ang*land_pos_y)/dis
             self.rel_land_pos_y = (cos_ang*land_pos_y + sin_ang*land_pos_x)/dis
         elif world.use_normalized:
-            self.agent_pos_x = (agent_pos_x-agent_pos_x[0])/ self.max_distance
-            self.agent_pos_y = (agent_pos_y-agent_pos_y[0])/ self.max_distance
-            self.land_pos_x = (land_pos_x-agent_pos_x[0])/ self.max_distance
-            self.land_pos_y = (land_pos_y-agent_pos_y[0])/ self.max_distance
-        elif world.use_mapping:
-
             self.agent_pos_x = (agent_pos_x-agent_pos_x[0])/ self.max_distance
             self.agent_pos_y = (agent_pos_y-agent_pos_y[0])/ self.max_distance
             self.land_pos_x = (land_pos_x-agent_pos_x[0])/ self.max_distance
@@ -136,8 +130,8 @@ class Scenario(BaseScenario):
                 for a in world.agents:
                     goal_id = world.pred_goal_id[a.id]
                     target_goal = world.landmarks[int(goal_id)]
-                    dists += np.sqrt(np.sum(np.square(self.prev_agent_state[a.id] - target_goal.state.p_pos)))
-                rew = - (dists - self.gt_dists)
+                    dists += np.sqrt(np.sum(np.square(self.prev_agent_state[a.id] - target_goal.state.p_pos))) / self.al_max_dis
+                rew = -dists #/self.gt_dists)
                 # self.prev_agent_state = []
                 # for a in world.agents:
                 #     self.prev_agent_state.append(a.state.p_pos.copy())
@@ -236,12 +230,13 @@ class Scenario(BaseScenario):
         row_ind, col_ind = linear_sum_assignment(cost)
 
         max_distance = np.array(all_distance).max()
+        al_max_dis = cost.max()
         dists = 0
         for a in world.agents:
             goal_id = col_ind[a.id]
             target_goal = world.landmarks[goal_id]
-            dists += np.sqrt(np.sum(np.square(a.state.p_pos - target_goal.state.p_pos)))
-        return col_ind, max_distance, dists
+            dists += np.sqrt(np.sum(np.square(a.state.p_pos - target_goal.state.p_pos))) / al_max_dis
+        return col_ind, max_distance, al_max_dis, dists
 
 
     def info(self, world):
