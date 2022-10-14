@@ -18,7 +18,7 @@ def make_train_env(all_args):
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "MPE":
-                env = MPEEnv(all_args)
+                env = MPEEnv(all_args,rank)
             else:
                 print("Can not support the " +
                       all_args.env_name + "environment.")
