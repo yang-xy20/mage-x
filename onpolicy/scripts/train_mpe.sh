@@ -1,10 +1,10 @@
 #!/bin/sh
 env="MPE"
 scenario="simple_spread"  # simple_speaker_listener # simple_reference
-num_landmarks=50
-num_agents=50
+num_landmarks=20
+num_agents=20
 algo="rmappo"
-exp="only_ctl_normalized_50agents_only_4maps"
+exp="only_ctl_normalized_20agents_only_4maps"
 seed_max=1
 
 echo "env is ${env}, scenario is ${scenario}, algo is ${algo}, exp is ${exp}, max seed is ${seed_max}"

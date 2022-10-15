@@ -26,14 +26,13 @@ class Scenario(BaseScenario):
             agent.name = 'agent %d' % i
             agent.collide = True
             agent.silent = True
-            agent.size = 0.05
+            agent.size = 0.1
             agent.id = i
         # add landmarks
         world.landmarks = [Landmark() for i in range(world.num_landmarks)]
         for i, landmark in enumerate(world.landmarks):
             landmark.name = 'landmark %d' % i
             landmark.id = i
-            agent.size = 0.02
             landmark.collide = False
             landmark.movable = False
         # make initial conditions
@@ -77,14 +76,14 @@ class Scenario(BaseScenario):
         land_pos_x = np.zeros((world.num_agents,1))
         land_pos_y = np.zeros((world.num_agents,1))
         for i, agent in enumerate(world.agents):
-            agent.state.p_pos = world.all_pos[i] #np.random.uniform(-3, +3, world.dim_p)
+            agent.state.p_pos = world.all_pos[i].copy() #np.random.uniform(-3, +3, world.dim_p)
             agent_pos_x[agent.id] = agent.state.p_pos[0]
             agent_pos_y[agent.id] = agent.state.p_pos[1]
             agent.state.p_vel = np.zeros(world.dim_p)
             agent.state.c = np.zeros(world.dim_c)
             self.prev_agent_state.append(agent.state.p_pos.copy())
         for i, landmark in enumerate(world.landmarks):
-            landmark.state.p_pos = world.all_land[i]#0.8 * np.random.uniform(-3, +3, world.dim_p)
+            landmark.state.p_pos = world.all_land[i].copy()#0.8 * np.random.uniform(-3, +3, world.dim_p)
             landmark.state.p_vel = np.zeros(world.dim_p)
             land_pos_x[i] = landmark.state.p_pos[0]
             land_pos_y[i] = landmark.state.p_pos[1]
