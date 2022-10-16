@@ -191,6 +191,9 @@ class MultiAgentEnv(gym.Env):
             assert self.me_reset
             self.me_reset = False
             if self.world.name == 'spread':
+                # if self.random_goal:
+                #     self.world.pred_goal_id = random.
+                # else:
                 self.world.pred_goal_id = np.argsort(action_n)[0]
             elif self.world.name == 'ball':
                 self.world.pred_box_id = np.argsort(action_n[0,:self.n])

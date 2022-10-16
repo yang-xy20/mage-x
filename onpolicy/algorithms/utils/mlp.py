@@ -14,7 +14,7 @@ class MLPLayer(nn.Module):
 
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
-
+        hidden_size = 64
         self.fc1 = nn.Sequential(
             init_(nn.Linear(input_dim, hidden_size)), active_func, nn.LayerNorm(hidden_size))
         self.fc_h = nn.Sequential(init_(
@@ -43,7 +43,7 @@ class MLPBase(nn.Module):
         self._use_ReLU = args.use_ReLU
         self._stacked_frames = args.stacked_frames
         self._layer_N = args.layer_N
-        self.hidden_size = args.hidden_size
+        self.hidden_size = 64
 
         obs_dim = obs_shape[0]
 
@@ -63,5 +63,4 @@ class MLPBase(nn.Module):
 
     @property
     def output_size(self):
-        
-        return self.hidden_size
+        return 64

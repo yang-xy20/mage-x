@@ -76,14 +76,14 @@ class Scenario(BaseScenario):
         land_pos_x = np.zeros((world.num_agents,1))
         land_pos_y = np.zeros((world.num_agents,1))
         for i, agent in enumerate(world.agents):
-            agent.state.p_pos = world.all_pos[i].copy() #np.random.uniform(-3, +3, world.dim_p)
+            agent.state.p_pos = world.all_pos[i].copy()/1.5 #np.random.uniform(-1, +1, world.dim_p)#
             agent_pos_x[agent.id] = agent.state.p_pos[0]
             agent_pos_y[agent.id] = agent.state.p_pos[1]
             agent.state.p_vel = np.zeros(world.dim_p)
             agent.state.c = np.zeros(world.dim_c)
             self.prev_agent_state.append(agent.state.p_pos.copy())
         for i, landmark in enumerate(world.landmarks):
-            landmark.state.p_pos = world.all_land[i].copy()#0.8 * np.random.uniform(-3, +3, world.dim_p)
+            landmark.state.p_pos = world.all_land[i].copy()/1.5 #0.8 * np.random.uniform(-1, +1, world.dim_p)#
             landmark.state.p_vel = np.zeros(world.dim_p)
             land_pos_x[i] = landmark.state.p_pos[0]
             land_pos_y[i] = landmark.state.p_pos[1]
@@ -138,7 +138,7 @@ class Scenario(BaseScenario):
         if mode == 'exe':
             goal_id = world.pred_goal_id[agent.id]
             target_goal = world.landmarks[int(goal_id)]
-            dists = np.sqrt(np.sum(np.square(agent.state.p_pos - target_goal.state.p_pos)))
+            dists = np.sqrt(np.sum(np.square(agent.state.p_pos - target_goal.state.p_pos)))/ self.al_max_dis
             rew -= dists
             if dists <= world.agents[0].size + world.landmarks[0].size:
                 rew += 1
