@@ -3,7 +3,7 @@ from gym import spaces
 from gym.envs.registration import EnvSpec
 import numpy as np
 from .multi_discrete import MultiDiscrete
-
+import random
 # update bounds to center around agent
 cam_range = 2
 
@@ -191,13 +191,20 @@ class MultiAgentEnv(gym.Env):
             assert self.me_reset
             self.me_reset = False
             if self.world.name == 'spread':
-                # if self.random_goal:
-                #     self.world.pred_goal_id = random.
-                # else:
-                self.world.pred_goal_id = np.argsort(action_n)[0]
+                if self.world.random_goal:
+                    self.world.pred_goal_id = [i for i in range(self.n)]
+                    np.random.shuffle(self.world.pred_goal_id)
+                else:
+                    self.world.pred_goal_id = np.argsort(action_n)[0]
             elif self.world.name == 'ball':
-                self.world.pred_box_id = np.argsort(action_n[0,:self.n])
-                self.world.pred_land_id = np.argsort(action_n[0,self.n:])
+                if self.world.random_goal:
+                    self.world.pred_goal_id = [i for i in range(self.n)]
+                    self.world.pred_land_id = [i for i in range(self.n)]
+                    np.random.shuffle(self.world.pred_goal_id)
+                    np.random.shuffle(self.world.pred_land_id)
+                else:
+                    self.world.pred_box_id = np.argsort(action_n[0,:self.n])
+                    self.world.pred_land_id = np.argsort(action_n[0,self.n:])
            
     def get_data(self, mode):
         obs_n = []

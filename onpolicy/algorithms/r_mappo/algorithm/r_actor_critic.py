@@ -38,7 +38,7 @@ class R_Actor(nn.Module):
             if use_macro:
                 self.base = Perception_Graph(args.num_agents)
             else:
-                self.base = Topk_Graph(args.num_agents, args.hidden_size, device)
+                self.base = Topk_Graph(args.num_agents, args.hidden_size, args.use_attn, device)
         else:
             self._mixed_obs = False
             base = CNNBase if len(obs_shape) == 3 else MLPBase
@@ -154,7 +154,7 @@ class R_Critic(nn.Module):
             if use_macro:
                 self.base = Perception_Graph(args.num_agents)
             else:
-                self.base = Topk_Graph(args.num_agents, args.hidden_size, device)
+                self.base = Topk_Graph(args.num_agents, args.hidden_size, args.use_attn, device)
         else:
             self._mixed_obs = False
             base = CNNBase if len(cent_obs_shape) == 3 else MLPBase

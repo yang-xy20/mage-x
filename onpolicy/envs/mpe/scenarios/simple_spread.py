@@ -8,6 +8,7 @@ class Scenario(BaseScenario):
     def make_world(self, args, rank):
         world = World()
         world.name = 'spread'
+        world.random_goal = args.random_goal
         world.use_gnn = args.use_gnn
         world.use_exe_gnn = args.use_exe_gnn
         world.world_length = args.episode_length
@@ -36,30 +37,30 @@ class Scenario(BaseScenario):
             landmark.collide = False
             landmark.movable = False
         # make initial conditions
-        world.all_pos = np.zeros((world.num_agents,2))
-        dir_name = os.path.dirname(os.path.abspath(__file__)) #2
-        txt_file_path = os.path.join(dir_name, '{}_maps'.format(world.num_agents), "{}agent_simple_spread_map_{}.txt".format(world.num_agents,rank % 4))
-        with open(txt_file_path, "r") as f:
-            num = 0
-            for line in f.readlines():
-                line = line.strip('\n')  #去掉列表中每一个元素的换行符
-                line = line.split()
-                for i in range(2):
-                    world.all_pos[num,i] = float(line[i])
-                num += 1   
-        f.close()
-        world.all_land = np.zeros((world.num_agents,2))
-        dir_name = os.path.dirname(os.path.abspath(__file__)) #2
-        txt_file_path = os.path.join(dir_name, '{}_maps'.format(world.num_agents), "{}agent_simple_spread_land_{}.txt".format(world.num_agents,rank % 4))
-        with open(txt_file_path, "r") as f:
-            num = 0
-            for line in f.readlines():
-                line = line.strip('\n')  #去掉列表中每一个元素的换行符
-                line = line.split()
-                for i in range(2):
-                    world.all_land[num,i] = float(line[i])
-                num += 1   
-        f.close()
+        # world.all_pos = np.zeros((world.num_agents,2))
+        # dir_name = os.path.dirname(os.path.abspath(__file__)) #2
+        # txt_file_path = os.path.join(dir_name, '{}_maps'.format(world.num_agents), "{}agent_simple_spread_map_{}.txt".format(world.num_agents,rank % 4))
+        # with open(txt_file_path, "r") as f:
+        #     num = 0
+        #     for line in f.readlines():
+        #         line = line.strip('\n')  #去掉列表中每一个元素的换行符
+        #         line = line.split()
+        #         for i in range(2):
+        #             world.all_pos[num,i] = float(line[i])
+        #         num += 1   
+        # f.close()
+        # world.all_land = np.zeros((world.num_agents,2))
+        # dir_name = os.path.dirname(os.path.abspath(__file__)) #2
+        # txt_file_path = os.path.join(dir_name, '{}_maps'.format(world.num_agents), "{}agent_simple_spread_land_{}.txt".format(world.num_agents,rank % 4))
+        # with open(txt_file_path, "r") as f:
+        #     num = 0
+        #     for line in f.readlines():
+        #         line = line.strip('\n')  #去掉列表中每一个元素的换行符
+        #         line = line.split()
+        #         for i in range(2):
+        #             world.all_land[num,i] = float(line[i])
+        #         num += 1   
+        # f.close()
         self.reset_world(world)
         return world
 
@@ -76,14 +77,14 @@ class Scenario(BaseScenario):
         land_pos_x = np.zeros((world.num_agents,1))
         land_pos_y = np.zeros((world.num_agents,1))
         for i, agent in enumerate(world.agents):
-            agent.state.p_pos = world.all_pos[i].copy()/1.5 #np.random.uniform(-1, +1, world.dim_p)#
+            agent.state.p_pos = np.random.uniform(-2, +2, world.dim_p)#world.all_pos[i].copy()/1.5 #
             agent_pos_x[agent.id] = agent.state.p_pos[0]
             agent_pos_y[agent.id] = agent.state.p_pos[1]
             agent.state.p_vel = np.zeros(world.dim_p)
             agent.state.c = np.zeros(world.dim_c)
             self.prev_agent_state.append(agent.state.p_pos.copy())
         for i, landmark in enumerate(world.landmarks):
-            landmark.state.p_pos = world.all_land[i].copy()/1.5 #0.8 * np.random.uniform(-1, +1, world.dim_p)#
+            landmark.state.p_pos = 0.8 * np.random.uniform(-2, +2, world.dim_p)#world.all_land[i].copy()/1.5 #
             landmark.state.p_vel = np.zeros(world.dim_p)
             land_pos_x[i] = landmark.state.p_pos[0]
             land_pos_y[i] = landmark.state.p_pos[1]

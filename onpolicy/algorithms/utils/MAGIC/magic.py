@@ -4,12 +4,13 @@ from torch import nn
 import numpy as np
 from .gnn_layers import GraphAttention
 from onpolicy.algorithms.utils.MAGIC.graph_conv_module import  GraphConvolutionModule
+from onpolicy.algorithms.utils.MAGIC.invariant import Invariant
 
 class Topk_Graph(nn.Module):
     """
     The communication protocol of Multi-Agent Graph AttentIon Communication (MAGIC)
     """
-    def __init__(self, num_agents, hidden_size, device=torch.device("cuda:0")):
+    def __init__(self, num_agents, hidden_size, use_attn, device=torch.device("cuda:0")):
         super(Topk_Graph, self).__init__()
         """
         Initialization method for the MAGIC communication protocol (2 rounds of communication)
@@ -20,19 +21,22 @@ class Topk_Graph(nn.Module):
 
         self.num_agents = num_agents
         self.hidden_size = hidden_size
+        self.use_attn = use_attn
         gat_encoder_out_size = 32
         gat_hid_size = 32
         
         dropout = 0
         negative_slope = 0.2
-
-        # initialize sub-processors
-        self.sub_processor1 = GraphConvolutionModule(self.hidden_size, gat_hid_size)
-        self.sub_processor2 = GraphConvolutionModule(gat_hid_size, self.hidden_size)
-       
-        self.gat_encoder = GraphConvolutionModule(self.hidden_size, gat_encoder_out_size)
-            
-        # initialize the gat encoder for the Scheduler
+        if self.use_attn:
+            self.attn_n = Invariant(hidden_dim = self.hidden_size, heads = 4, dim_head = 16, mlp_dim = 64)
+        else:
+            # initialize sub-processors
+            self.sub_processor1 = GraphConvolutionModule(self.hidden_size, gat_hid_size)
+            self.sub_processor2 = GraphConvolutionModule(gat_hid_size, self.hidden_size)
+        
+            self.gat_encoder = GraphConvolutionModule(self.hidden_size, gat_encoder_out_size)
+                
+            # initialize the gat encoder for the Scheduler
         self.obs_encoder = nn.Linear(2, self.hidden_size)#
 
         self.land_encoder = nn.Linear(6, self.hidden_size)#
@@ -78,13 +82,25 @@ class Topk_Graph(nn.Module):
         # n: number of agents
         #obs, rnn_state, masks = x
         # encoded_obs: [1 (batch_size) * n * hid_size]
-        inter_message = self.agent_interaction(obs)
+        if self.use_attn:
+            inter_message = self.attn(obs)
+        else:
+            inter_message = self.agent_interaction(obs)
         agent_land = torch.cat((obs['agent_state'], obs['target_goal']), dim = 2)
         land_embedding = self.land_encoder(agent_land)[:,0]
         all_embedding = torch.cat((inter_message, land_embedding), dim = -1)
         message = self.all_encoder(all_embedding)
         return message
-        
+
+    def attn(self, obs):
+        if obs['other_pos'].shape[-1] != 2:
+            all_state = torch.cat((obs['agent_state'], obs['other_pos']),dim = 1)
+        else:
+            all_state = torch.cat((obs['agent_state'][:,:,:2], obs['other_pos']),dim = 1)
+        encoded_obs = self.obs_encoder(all_state)
+        x = self.attn_n(encoded_obs)
+        return x
+
     def agent_interaction(self, obs):
         if obs['other_pos'].shape[-1] != 2:
             all_state = torch.cat((obs['agent_state'], obs['other_pos']),dim = 1)
