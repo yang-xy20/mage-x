@@ -15,7 +15,10 @@ class Invariant(nn.Module):
         self.attn_net = Transformer(hidden_dim, depth = 1, heads = heads, dim_head = dim_head, mlp_dim = mlp_dim, dropout = 0.)
        
     def forward(self, x):
-        B = x.shape[0]
-        all = self.attn_net(x)
-        all = all.mean(dim=1)
-        return all
+        for attn, ff in self.attn_net.layers:
+            x = attn(x) + x
+            x = ff(x) + x
+        # B = x.shape[0]
+        # all = self.attn_net(x)
+        x = x.mean(dim=1)
+        return x
