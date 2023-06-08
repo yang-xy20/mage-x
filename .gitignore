@@ -15,5 +15,5 @@ logs
 .nfs*
 *.so
 .idea/
-onpolicy/envs/mpe/scenarios/20_maps/
-onpolicy/envs/mpe/scenarios/50_maps/
+
+
