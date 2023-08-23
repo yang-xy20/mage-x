@@ -29,7 +29,7 @@ class MPEHRunner(HRunner):
 
         start = time.time()
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
-        self.suc_step = np.ones((self.n_rollout_threads))*self.episode_length
+        self.suc_step = np.ones((self.n_rollout_threads))*(self.episode_length-(self.episode_length // (self.step_difference + 1)))
         for episode in range(episodes):
             if self.use_linear_lr_decay:
                 self.controller_trainer.policy.lr_decay(episode, episodes)
@@ -58,8 +58,8 @@ class MPEHRunner(HRunner):
                     self.exe_obs, _, _, _ = self.envs.get_data('exe')
                     self.ctl_obs, _, _, _ = self.envs.get_data('ctl')#todo:done
                     for i, info in enumerate(self.exe_infos):
-                        if info[0]['success_rate'] == 1.0 and self.suc_step[i] == self.episode_length:
-                            self.suc_step[i] = step
+                        if info[0]['success_rate'] == 1.0 and self.suc_step[i] == self.episode_length-(self.episode_length // (self.step_difference + 1)):
+                            self.suc_step[i] = exe_step
                     
                     exe_data = self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos, self.exe_values,\
                                self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, self.exe_rnn_states_critic
@@ -81,7 +81,7 @@ class MPEHRunner(HRunner):
                     self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos = self.envs.get_data('exe')
                     for i, info in enumerate(self.exe_infos):
                         if info[0]['success_rate'] == 1.0 and self.suc_step[i] == self.episode_length:
-                            self.suc_step[i] = step
+                            self.suc_step[i] = exe_step
                     exe_data = self.exe_obs, self.exe_rwds, self.exe_dones, self.exe_infos, self.exe_values,\
                                self.exe_acts, self.exe_act_log_probs, self.exe_rnn_states, self.exe_rnn_states_critic
                     self.insert(exe_data, self.executor_buffer, self.executor_num_agents,'exe')

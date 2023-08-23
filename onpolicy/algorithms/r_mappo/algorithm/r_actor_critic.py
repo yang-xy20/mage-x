@@ -8,7 +8,7 @@ from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.popart import PopArt
 from onpolicy.utils.util import get_shape_from_obs_space
 from onpolicy.algorithms.utils.softgnn import Perception_Graph, LinearAssignment
-from onpolicy.algorithms.utils.MAGIC.magic import Topk_Graph
+from onpolicy.algorithms.utils.GNN.graph import Topk_Graph
 
 
 class R_Actor(nn.Module):
